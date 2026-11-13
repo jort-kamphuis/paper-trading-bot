@@ -19,6 +19,7 @@ from datetime import date, datetime, timezone
 
 from bot import challenger, rapport
 from bot.ai.budget import Budget, BudgetOp
+from bot.challenger import Voorstel
 from bot.opzet import SLEUTEL_START
 
 
@@ -176,6 +177,28 @@ def maak(
                         f"een met de voorgestelde instelling. Na {weken} weken krijg je de uitslag. "
                         f"Er verandert pas iets aan de echte instellingen na jouw akkoord."
                     )
+
+    # ---- 3b. alleen in de proefweek: een testvoorstel ----
+    # Zonder lopende of eerdere proef valt de akkoordroute niet te testen. Doet
+    # Claude geen voorstel, dan start de bot een testvoorstel, duidelijk als
+    # zodanig gemarkeerd, en alleen in de proefdatabase.
+    test = (cfg.get("proefweek") or {}).get("testvoorstel") if cfg.get("modus") == "proefweek" else None
+    eerder = con.execute("SELECT COUNT(*) n FROM challengers").fetchone()["n"]
+    if test and not eerder:
+        v = Voorstel(
+            strategie=test["strategie"],
+            parameter=test["parameter"],
+            nieuwe_waarde=float(test["nieuwe_waarde"]),
+            onderbouwing="TESTVOORSTEL van de proefweek (niet van Claude), om de akkoordroute te testen.",
+        )
+        reden = challenger.toets_voorstel(cfg, v, loopt_al=False)
+        if reden is None:
+            nummer = challenger.start(con, cfg, v, voorgesteld_op=tot, gestart_op=tot)
+            ai_regels.append(
+                f"\nProefweek: Claude deed geen voorstel, dus de bot startte TESTVOORSTEL "
+                f"{nummer} ({v.strategie}.{v.parameter} naar {challenger._mooi(v.nieuwe_waarde)}). "
+                f"Dat is alleen om de akkoordroute te testen."
+            )
 
     # ---- 4. kosten ----
     budget = Budget(con, cfg)

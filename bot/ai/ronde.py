@@ -217,13 +217,23 @@ def denk_na(
 
 
 def maak_client(con: sqlite3.Connection, cfg: dict, vandaag: str | None = None) -> ClaudeClient:
-    return ClaudeClient(Budget(con, cfg, vandaag=vandaag))
+    return ClaudeClient(
+        Budget(con, cfg, vandaag=vandaag),
+        pauze_seconden=float(cfg.get("ai", {}).get("pauze_seconden", 0) or 0),
+    )
 
 
 def ai_portefeuilles(cfg: dict) -> list[tuple[str, str | None]]:
-    """De AI-portefeuilles: naam en eventueel het model dat voor alle rollen geldt."""
+    """De AI-portefeuilles: naam en eventueel het model dat voor alle rollen geldt.
+
+    Staat er in de instellingen een lijst 'ai.portefeuilles' (zoals in de
+    proefweek), dan geldt die. Anders: ai_analist plus de controleportefeuille.
+    """
     if not cfg.get("ai", {}).get("actief"):
         return []
+    lijst = cfg["ai"].get("portefeuilles")
+    if lijst:
+        return [(str(p["naam"]), p.get("model")) for p in lijst]
     uit: list[tuple[str, str | None]] = [("ai_analist", None)]
     controle = cfg["ai"].get("controle_portefeuille", {})
     if controle.get("actief"):

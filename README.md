@@ -121,6 +121,46 @@ een eigen database (`data/backtest.db`) en kan dus gewoon lokaal.
 
 ---
 
+## De proefweek (tot en met 19 november 2026)
+
+Het gratis API-tegoed verloopt op 20 november 2026 om 00:00 UTC. Tot dan draait
+de bot een **proefweek**: alles wordt getest, niets telt mee.
+
+* **Instellingen:** `config.proefweek.yaml`, bovenop `config.yaml`. Die laatste
+  verandert niet. Na de proefweek geldt vanzelf weer alleen `config.yaml`.
+* **Eigen database:** `data/proefweek.db`. De echte database blijft onaangeroerd.
+* **Elk Telegram-bericht** begint met `[PROEFWEEK, telt niet mee]`.
+* **Drie AI-portefeuilles op alle 48 symbolen:** `proef_ai_opus` (alles op
+  Opus 5.5), `proef_ai_mix` (precies de instellingen van de echte meting, om
+  vooraf te meten wat die kost) en `proef_ai_haiku` (de controle). Budget: $90.
+* **De akkoordroute als droogtest:** zondag het weekrapport (met een
+  testvoorstel als Claude niets voorstelt), woensdag 18 november een extra
+  rapport waarin de proef wordt beoordeeld. Dan krijg je `/akkoord` of
+  `/afwijzen` te zien. Een akkoord wordt helemaal verwerkt, behalve dat
+  `config.yaml` niet wordt aangepast.
+* **18 november:** een herinnering in Telegram om $10 aan credits toe te voegen.
+
+Bekijken:
+
+```bash
+.venv\Scripts\python.exe scripts\stand.py --trades
+```
+
+```bash
+.venv\Scripts\python.exe scripts\proefweek_verslag.py
+```
+
+**Op 20 november schakelt de bot vanzelf om:** de eerste ronde van die dag start
+de echte meting opnieuw (alle portefeuilles op dezelfde dag, met de correctie
+van $0,23), met de normale instellingen, en meldt dat in Telegram. Wil je dat
+eerder, dan doet dit ene commando het (op GitHub, niet op je laptop):
+
+```bash
+.venv\Scripts\python.exe scripts\omschakelen.py
+```
+
+---
+
 ## Het weekrapport en de challenger
 
 ### Het weekrapport
@@ -494,7 +534,7 @@ paper-trading-bot/
 │   ├── zet_github_secrets.py  sleutels uit .env naar GitHub Secrets
 │   ├── slank_maken.py       database klein maken voor git (door GitHub)
 │   └── meld_fout.py         foutmelding naar Telegram (door GitHub)
-└── tests/                   175 tests
+└── tests/                   195 tests
 ```
 
 ### Wanneer begint de meting

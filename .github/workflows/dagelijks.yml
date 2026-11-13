@@ -24,6 +24,11 @@ on:
         type: choice
         options: [auto, ja, nee]
         default: auto
+      omschakelen:
+        description: "Nu van de proefweek naar de echte meting? (auto = vanzelf na de proefweek)"
+        type: choice
+        options: [auto, ja]
+        default: auto
 
 permissions:
   contents: write
@@ -36,7 +41,9 @@ concurrency:
 jobs:
   ronde:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Een volle ronde in de proefweek (3 AI-portefeuilles op 48 symbolen) kan
+    # ongeveer een uur duren. Zie ook de limiet van de ronde zelf hieronder.
+    timeout-minutes: 150
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -59,13 +66,17 @@ jobs:
 
       - name: Dagelijkse ronde
         id: ronde
+        # Korter dan de hele job, zodat er na een uitloper nog tijd is om de
+        # database te bewaren (met de AI-kosten die al gemaakt zijn).
+        timeout-minutes: 125
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # Via een variabele, niet rechtstreeks in de opdracht: zo kan een
           # invoerwaarde nooit als opdracht worden uitgevoerd. Het script
-          # accepteert bovendien alleen auto, ja of nee.
+          # accepteert bovendien alleen de vaste keuzes.
           WEEKRAPPORT: ${{ inputs.weekrapport || 'auto' }}
-        run: python scripts/dagelijks.py --telegram --weekrapport "$WEEKRAPPORT"
+          OMSCHAKELEN: ${{ inputs.omschakelen || 'auto' }}
+        run: python scripts/dagelijks.py --telegram --weekrapport "$WEEKRAPPORT" --omschakelen "$OMSCHAKELEN"
 
       # Ook na een mislukte ronde: de AI-kosten en -beslissingen zijn per symbool
       # vastgelegd. Gooi je die weg, dan betaalt de bot morgen opnieuw voor
@@ -79,6 +90,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # config.yaml verandert alleen na jouw /akkoord in Telegram.
           git add data/trading.db config.yaml
+          # De proefweek heeft een eigen database; die blijft ook bewaard.
+          if [ -f data/proefweek.db ]; then git add data/proefweek.db; fi
           if git diff --cached --quiet; then
             echo "Niets veranderd."
             exit 0

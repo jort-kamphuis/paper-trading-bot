@@ -56,7 +56,14 @@ def _ai_mag(args) -> bool:
     """
     if args.db is None or args.ai_op_kopie:
         return True
-    return Path(args.db).resolve() == conf.DB_PAD.resolve()
+    # De echte database, of tijdens de proefweek de proefweekdatabase.
+    from bot import modus
+
+    toegestaan = {conf.DB_PAD.resolve()}
+    overlay = modus.lees_proefweek()
+    if overlay and "proefweek" in overlay:
+        toegestaan.add((conf.PROJECT / overlay["proefweek"]["database"]).resolve())
+    return Path(args.db).resolve() in toegestaan
 
 
 def _haal_data_op(jaren: float, waarschuwingen: list[str], db: str | None = None) -> bool:
@@ -158,12 +165,24 @@ def _ai_ronde(
             bericht.append(f"{naam} gestopt: {uitkomst.gestopt[:200]}")
             break
 
-    prognose = maak_prognose(con, cfg)
     print()
     print(budget.samenvatting())
+    if cfg.get("modus") == "proefweek":
+        # In de proefweek is de vraag niet of 48 symbolen op Opus in een maand
+        # passen, maar wat de echte meting straks kost. Dat meet proef_ai_mix.
+        bericht.append(
+            f"AI-kosten vandaag ${kosten_vandaag:.3f}, proefweek tot nu toe "
+            f"${budget.uitgegeven():.2f} van ${budget.max_usd:.2f}."
+        )
+        schatting = _schatting_echte_meting(con)
+        if schatting:
+            print(schatting)
+            bericht.append(schatting)
+        return bericht
+
+    prognose = maak_prognose(con, cfg)
     print()
     print(als_tekst(prognose))
-
     regel = f"AI-kosten vandaag ${kosten_vandaag:.3f}, deze maand ${budget.uitgegeven():.2f} van ${budget.max_usd:.2f}."
     if prognose.maand_usd is not None:
         oordeel = "past" if prognose.past else "PAST NIET"
@@ -172,13 +191,43 @@ def _ai_ronde(
     return bericht
 
 
+def _schatting_echte_meting(con) -> str | None:
+    """Wat de echte meting per maand kost, gemeten aan proef_ai_mix en proef_ai_haiku.
+
+    Gerekend met de gewone instellingen (15 symbolen), want zo draait de echte
+    meting straks.
+    """
+    from bot.ai.kostenprognose import maak_prognose
+
+    normaal = conf.laad()
+    p = maak_prognose(con, normaal)
+    mix = p.per_portefeuille.get("proef_ai_mix")
+    haiku = p.per_portefeuille.get("proef_ai_haiku")
+    if mix is None:
+        return None
+    rapport = 0.0
+    for regel in p.uitleg:
+        if regel.startswith("weekrapport:"):
+            try:
+                rapport = float(regel.rsplit("$", 1)[1].split()[0])
+            except (IndexError, ValueError):
+                rapport = 0.0
+    totaal = mix + (haiku or 0.0) + rapport
+    budget = float(normaal["ai"]["budget"]["max_usd_per_maand"])
+    oordeel = "past" if totaal <= budget else "PAST NIET"
+    return (
+        f"Echte meting (mix + Haiku-controle, 15 symbolen) naar schatting ${totaal:.2f} per maand "
+        f"tegen een budget van ${budget:.2f}: {oordeel}. Gemeten over {p.rondes} ronde(s)."
+    )
+
+
 SLEUTEL_TELEGRAM_OFFSET = "telegram_offset"
 # Hierin zet de ronde een beschrijving van een goedgekeurde wijziging, zodat
 # GitHub Actions die in het commitbericht kan zetten. Staat in .gitignore.
 WIJZIGING_BESTAND = conf.PROJECT / ".wijziging.txt"
 
 
-def _verwerk_antwoorden(con, datum: str) -> list[str]:
+def _verwerk_antwoorden(con, datum: str, droog: bool = False) -> list[str]:
     """Lees je /akkoord en /afwijzen uit Telegram en voer ze uit.
 
     Alleen berichten uit jouw eigen chat tellen, en alleen die twee opdrachten.
@@ -207,7 +256,8 @@ def _verwerk_antwoorden(con, datum: str) -> list[str]:
             continue
         actie, nummer = opdracht
         antwoord = challenger.verwerk(
-            con, conf.CONFIG_PAD, actie, nummer, wanneer=bericht["wanneer"], datum=datum
+            con, conf.CONFIG_PAD, actie, nummer, wanneer=bericht["wanneer"], datum=datum,
+            droog=droog,
         )
         print(f"Telegram: /{actie} {nummer} -> {antwoord}")
         antwoorden.append(antwoord)
@@ -225,45 +275,101 @@ def _verwerk_antwoorden(con, datum: str) -> list[str]:
     return antwoorden
 
 
-def ronde(args) -> tuple[int, str | None]:
-    """De ronde zelf. Geeft de afsluitcode en het dagbericht voor Telegram."""
-    cfg = conf.laad()
-    con = database.verbind(args.db)
-    waarschuwingen: list[str] = []
-    args.berichten = []  # extra berichten voor Telegram (weekrapport, vragen)
-
-    print(f"Dagelijkse ronde, {date.today().isoformat()}")
-    print("=" * 60)
-
-    # ---- 0. lokaal of op GitHub? ----
+def _weigert_lokaal(con, args) -> bool:
+    """True als deze database op GitHub draait en we hier niet lokaal mogen schrijven."""
     if _op_github():
         database.zet_instelling(con, SLEUTEL_GITHUB, "ja")
-    elif database.lees_instelling(con, SLEUTEL_GITHUB) == "ja" and not args.lokaal:
-        print(
-            "\nDeze meting draait op GitHub. Een lokale ronde zou je kopie van de\n"
-            "database een andere meting maken dan die op GitHub, en dan botst het\n"
-            "bij de volgende 'git pull'.\n\n"
-            "Wil je de laatste stand zien? Haal hem op met 'git pull' en gebruik\n"
-            "scripts/stand.py. Weet je zeker dat je lokaal wilt draaien, gebruik\n"
-            "dan --lokaal."
-        )
+        return False
+    return database.lees_instelling(con, SLEUTEL_GITHUB) == "ja" and not args.lokaal
+
+
+LOKAAL_UITLEG = (
+    "\nDeze meting draait op GitHub. Een lokale ronde zou je kopie van de\n"
+    "database een andere meting maken dan die op GitHub, en dan botst het\n"
+    "bij de volgende 'git pull'.\n\n"
+    "Wil je de laatste stand zien? Haal hem op met 'git pull' en gebruik\n"
+    "scripts/stand.py. Weet je zeker dat je lokaal wilt draaien, gebruik\n"
+    "dan --lokaal."
+)
+
+
+def ronde(args) -> tuple[int, str | None]:
+    """De ronde zelf. Geeft de afsluitcode en het dagbericht voor Telegram."""
+    from datetime import datetime, timezone
+
+    from bot import modus, omschakelen
+
+    vandaag_utc = datetime.now(timezone.utc).date()
+    waarschuwingen: list[str] = []
+    args.berichten = []  # extra berichten voor Telegram (weekrapport, vragen)
+    voor_aan: list[str] = []  # regels bovenaan het dagbericht
+
+    print(f"Dagelijkse ronde, {date.today().isoformat()} (UTC {vandaag_utc.isoformat()})")
+    print("=" * 60)
+
+    # ---- 0. van de proefweek naar de echte meting ----
+    # Alleen in de gewone opstelling (zonder --db): vanzelf na de proefweek, of
+    # als je het zelf vraagt met --omschakelen ja.
+    overlay = modus.lees_proefweek()
+    if args.db is None:
+        con_echt = database.verbind(conf.DB_PAD)
+        if args.omschakelen == "ja" or omschakelen.is_nodig(con_echt, overlay, vandaag_utc):
+            if _weigert_lokaal(con_echt, args):
+                print(LOKAAL_UITLEG)
+                con_echt.close()
+                return 2, None
+            con_proef = None
+            if overlay and "proefweek" in overlay:
+                con_proef = database.verbind(conf.PROJECT / overlay["proefweek"]["database"])
+            melding = omschakelen.voer_uit(con_echt, con_proef, overlay, vandaag_utc)
+            if con_proef is not None:
+                con_proef.close()
+            print("\n" + melding)
+            voor_aan.append(melding)
+        con_echt.close()
+
+    cfg = modus.laad()
+    db = args.db or str(modus.database_pad(cfg))
+    args.label = cfg.get("label", "")
+    print(f"Modus: {cfg['modus']}, database: {Path(db).name}")
+    con = database.verbind(db)
+
+    # ---- 0b. lokaal of op GitHub? ----
+    if _weigert_lokaal(con, args):
+        print(LOKAAL_UITLEG)
         con.close()
         return 2, None
 
-    # ---- 0b. je antwoorden uit Telegram ----
+    # ---- 0c. je antwoorden uit Telegram ----
     antwoorden: list[str] = []
     if args.telegram:
         laatste = con.execute("SELECT MAX(datum) d FROM waarde").fetchone()["d"]
-        antwoorden = _verwerk_antwoorden(con, laatste or date.today().isoformat())
+        antwoorden = _verwerk_antwoorden(
+            con, laatste or date.today().isoformat(),
+            droog=bool(cfg["challenger"].get("droogtest")),
+        )
         if antwoorden:
-            cfg = conf.laad()  # een akkoord kan een instelling hebben veranderd
+            cfg = modus.laad()  # een akkoord kan een instelling hebben veranderd
+
+    # ---- 0d. een herinnering op een vaste dag (proefweek) ----
+    herinnering = (cfg.get("proefweek") or {}).get("herinnering") if cfg["modus"] == "proefweek" else None
+    if herinnering and str(herinnering["datum"]) == vandaag_utc.isoformat():
+        sleutel = f"herinnering_{herinnering['datum']}"
+        if database.lees_instelling(con, sleutel) is None:
+            tekst = str(herinnering["tekst"]).strip()
+            schatting = _schatting_echte_meting(con)
+            if schatting:
+                tekst += f"\n\n{schatting}"
+            args.berichten.append(tekst)
+            database.zet_instelling(con, sleutel, "verstuurd")
+            print(f"\nHerinnering klaargezet: {tekst[:80]}...")
 
     # ---- 1. koersen ----
     if args.geen_data:
         print("\nKoersen ophalen overgeslagen.")
     else:
         print("\nKoersen ophalen...")
-        if not _haal_data_op(args.jaren, waarschuwingen, db=args.db):
+        if not _haal_data_op(args.jaren, waarschuwingen, db=db):
             con.close()
             return 1, None
 
@@ -339,6 +445,7 @@ def ronde(args) -> tuple[int, str | None]:
             con,
             tot,
             extra=[
+                *voor_aan,
                 "Vannacht NIET gehandeld: de koersen zijn niet compleet.",
                 *[f"  {p}" for p in problemen[:8]],
                 "De volgende ronde haalt dit vanzelf in. Blijft een symbool wegvallen, "
@@ -372,7 +479,11 @@ def ronde(args) -> tuple[int, str | None]:
     # ---- 6. het weekrapport ----
     from bot import weekrapport
 
-    if args.weekrapport == "ja" or (args.weekrapport == "auto" and weekrapport.is_nodig(con, cfg, tot)):
+    extra_dag = (cfg.get("proefweek") or {}).get("extra_weekrapport_op") if cfg["modus"] == "proefweek" else None
+    extra_rapport = bool(extra_dag) and str(extra_dag) == vandaag_utc.isoformat()
+    if args.weekrapport == "ja" or (
+        args.weekrapport == "auto" and (extra_rapport or weekrapport.is_nodig(con, cfg, tot))
+    ):
         print("\nWeekrapport")
         print("-" * 60)
         client = None
@@ -393,7 +504,7 @@ def ronde(args) -> tuple[int, str | None]:
     print(overzicht.dagbericht(con, tot))
     print("=" * 60)
 
-    extra = list(antwoorden) + list(ai_regels)
+    extra = list(voor_aan) + list(antwoorden) + list(ai_regels)
     if waarschuwingen:
         extra.append("Let op bij het ophalen van koersen:")
         extra.extend(f"  {w}" for w in waarschuwingen[:5])
@@ -421,9 +532,17 @@ def main() -> int:
         "--weekrapport", choices=["auto", "ja", "nee"], default="auto",
         help="auto: alleen op de rapportdag uit config.yaml",
     )
+    p.add_argument(
+        "--omschakelen", choices=["auto", "ja"], default="auto",
+        help="ja: nu van de proefweek naar de echte meting (gebeurt anders vanzelf)",
+    )
     args = p.parse_args()
+    args.label = ""
 
     from bot import telegram
+
+    def label(tekst: str) -> str:
+        return f"{args.label}\n{tekst}" if args.label else tekst
 
     try:
         code, tekst = ronde(args)
@@ -431,12 +550,12 @@ def main() -> int:
         traceback.print_exc()
         if args.telegram and telegram.is_ingesteld():
             try:
-                telegram.stuur(
+                telegram.stuur(label(
                     "Paper trading: de dagelijkse ronde is mislukt.\n\n"
                     f"{type(fout).__name__}: {str(fout)[:500]}\n\n"
                     "De database is niet half bijgewerkt: elke dag gaat in een keer of "
                     "niet. Kijk in de logboeken van GitHub Actions voor details."
-                )
+                ))
             except telegram.TelegramFout as tfout:
                 print(f"Ook de foutmelding naar Telegram lukte niet: {tfout}")
         return 1
@@ -446,13 +565,13 @@ def main() -> int:
             print("\nTelegram overgeslagen: TELEGRAM_BOT_TOKEN of TELEGRAM_CHAT_ID ontbreekt.")
         elif code != 0 or tekst is None:
             try:
-                telegram.stuur(f"Paper trading: de dagelijkse ronde stopte (code {code}). Zie de logboeken.")
+                telegram.stuur(label(f"Paper trading: de dagelijkse ronde stopte (code {code}). Zie de logboeken."))
             except telegram.TelegramFout as tfout:
                 print(f"Telegram lukte niet: {tfout}")
         else:
             for bericht in [tekst, *getattr(args, "berichten", [])]:
                 try:
-                    delen = telegram.stuur(bericht, stil=True)
+                    delen = telegram.stuur(label(bericht), stil=True)
                     print(f"\nTelegram: bericht verstuurd ({delen} deel/delen).")
                 except telegram.TelegramFout as tfout:
                     print(f"\nTelegram lukte niet: {tfout}")

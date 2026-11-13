@@ -49,9 +49,18 @@ class GeenSleutel(Exception):
 class ClaudeClient:
     """Praat met de Claude-API en boekt elke aanroep in het budget."""
 
-    def __init__(self, budget: Budget):
+    # Hoe vaak de bibliotheek een aanroep opnieuw probeert bij een tijdelijke
+    # fout, zoals "te veel verzoeken" (429) of een overbelaste server. Ze wacht
+    # daar zelf steeds langer tussen.
+    OPNIEUW_PROBEREN = 5
+
+    def __init__(self, budget: Budget, pauze_seconden: float = 0.0):
         self.budget = budget
         self._client = None
+        # Een vaste pauze tussen aanroepen, voor als de limieten van het
+        # account krap blijken. Standaard uit.
+        self.pauze_seconden = float(pauze_seconden or 0.0)
+        self._vorige: float | None = None
 
     def _verbinding(self):
         """Maak de verbinding pas als hij echt nodig is.
@@ -81,8 +90,19 @@ class ClaudeClient:
                 "Lokaal: zet hem in het bestand .env (zie .env.example).\n"
                 "Op GitHub: zet hem als Secret bij de repository."
             )
-        self._client = anthropic.Anthropic()
+        self._client = anthropic.Anthropic(max_retries=self.OPNIEUW_PROBEREN)
         return self._client
+
+    def _wacht_even(self) -> None:
+        if not self.pauze_seconden:
+            return
+        import time
+
+        if self._vorige is not None:
+            over = self.pauze_seconden - (time.monotonic() - self._vorige)
+            if over > 0:
+                time.sleep(over)
+        self._vorige = time.monotonic()
 
     # ---------- de enige methode die de rest van de bot gebruikt ----------
 
@@ -105,6 +125,7 @@ class ClaudeClient:
         """
         self.budget.controleer()
         client = self._verbinding()
+        self._wacht_even()
 
         output_config: dict[str, Any] = {"effort": inspanning}
         if schema is not None:

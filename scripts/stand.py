@@ -36,8 +36,13 @@ def main() -> int:
     p.add_argument("--db", default=None, help="pad naar de database")
     args = p.parse_args()
 
-    cfg = conf.laad()
-    con = database.verbind(args.db)
+    from bot import modus
+
+    # Tijdens de proefweek laat dit de proefweek zien, daarna de echte meting.
+    cfg = modus.laad()
+    con = database.verbind(args.db or modus.database_pad(cfg))
+    if cfg["modus"] == "proefweek" and not args.db:
+        print(f"{cfg['label']} (data/proefweek.db)\n")
 
     start = database.lees_instelling(con, SLEUTEL_START)
     if start is None:

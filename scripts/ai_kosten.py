@@ -21,8 +21,12 @@ from bot.ai.kostenprognose import als_tekst, maak_prognose
 
 
 def main() -> int:
-    cfg = conf.laad()
-    con = database.verbind()
+    from bot import modus
+
+    cfg = modus.laad()
+    con = database.verbind(modus.database_pad(cfg))
+    if cfg["modus"] == "proefweek":
+        print(f"{cfg['label']} (data/proefweek.db)\n")
     print(Budget(con, cfg).samenvatting())
     print()
     print(als_tekst(maak_prognose(con, cfg)))

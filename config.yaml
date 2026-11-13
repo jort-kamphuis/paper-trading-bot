@@ -172,6 +172,11 @@ ai:
     bear:      {denken: aan,  inspanning: low}
     risk:      {denken: aan,  inspanning: medium}
 
+  # Een vaste pauze tussen twee aanroepen, in seconden. Standaard 0 (uit). Zet
+  # dit hoger als het account te veel verzoeken per minuut weigert (fout 429).
+  # De bibliotheek probeert zo'n verzoek zelf al een paar keer opnieuw.
+  pauze_seconden: 0
+
   budget:
     # De bot stopt zelf als dit bedrag deze maand op is, en meldt dat.
     # 5,50 dollar is ongeveer 5 euro (bij 1,10 dollar per euro). De API rekent

@@ -34,15 +34,29 @@ def maak_slank(con, kalender_symbool: str) -> int:
     return weg
 
 
+def _paden() -> list[Path]:
+    """De echte database, en de proefweekdatabase als die er is."""
+    paden = [conf.DB_PAD]
+    from bot import modus
+
+    overlay = modus.lees_proefweek()
+    if overlay and "proefweek" in overlay:
+        paden.append(conf.PROJECT / overlay["proefweek"]["database"])
+    return paden
+
+
 def main() -> int:
     cfg = conf.laad()
-    pad = Path(sys.argv[1]) if len(sys.argv) > 1 else conf.DB_PAD
-    voor = pad.stat().st_size if pad.exists() else 0
-    con = database.verbind(pad)
-    weg = maak_slank(con, cfg["rapport"]["kalender_symbool"])
-    con.close()
-    na = pad.stat().st_size
-    print(f"{weg} koersen weggehaald; database van {voor / 1024:.0f} kB naar {na / 1024:.0f} kB.")
+    paden = [Path(sys.argv[1])] if len(sys.argv) > 1 else _paden()
+    for pad in paden:
+        if not pad.exists():
+            continue
+        voor = pad.stat().st_size
+        con = database.verbind(pad)
+        weg = maak_slank(con, cfg["rapport"]["kalender_symbool"])
+        con.close()
+        na = pad.stat().st_size
+        print(f"{pad.name}: {weg} koersen weggehaald; van {voor / 1024:.0f} kB naar {na / 1024:.0f} kB.")
     return 0
 
 

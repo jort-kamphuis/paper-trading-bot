@@ -179,6 +179,9 @@ def vergelijk_paar(
 def beoordeel(con: sqlite3.Connection, cfg: dict, tot: str, kalender: list[str]) -> list[Uitslag]:
     """Beoordeel elke challenger die lang genoeg heeft gelopen."""
     weken = int(cfg["challenger"]["weken"])
+    # Alleen in de proefweek: ook als B niet beter is om akkoord vragen, zodat
+    # de akkoordroute getest kan worden. In de echte meting staat dit uit.
+    altijd_vragen = bool(cfg["challenger"].get("altijd_vragen"))
     uitslagen: list[Uitslag] = []
     for c in actieve(con):
         if c["status"] != "loopt":
@@ -200,11 +203,17 @@ def beoordeel(con: sqlite3.Connection, cfg: dict, tot: str, kalender: list[str])
             f"{_mooi(c['oude_waarde'])} naar {_mooi(c['nieuwe_waarde'])}), {weken} weken: "
             f"huidig {ra:+.1f}%, voorstel {rb:+.1f}% ({p_tekst})."
         )
-        if beter:
+        if not beter and altijd_vragen:
+            tekst += (
+                " B was niet beter. Normaal stopt de proef dan; in de proefweek wordt "
+                "toch om akkoord gevraagd, om de akkoordroute te testen."
+            )
+        if beter or altijd_vragen:
             con.execute(
                 "UPDATE challengers SET status='wacht_op_akkoord', beoordeeld_op=?, uitslag=? WHERE id=?",
                 (tot, tekst, c["id"]),
             )
+            beter = True  # er volgt een vraag om akkoord
         else:
             con.execute(
                 "UPDATE challengers SET status='afgewezen', beoordeeld_op=?, uitslag=? WHERE id=?",
@@ -251,8 +260,13 @@ def verwerk(
     challenger_id: int,
     wanneer: str,
     datum: str,
+    droog: bool = False,
 ) -> str:
-    """Voer je /akkoord of /afwijzen uit. Geeft een antwoord in gewone taal terug."""
+    """Voer je /akkoord of /afwijzen uit. Geeft een antwoord in gewone taal terug.
+
+    Met droog=True (de proefweek) wordt alles verwerkt en vastgelegd, behalve het
+    aanpassen van config.yaml.
+    """
     c = con.execute("SELECT * FROM challengers WHERE id = ?", (challenger_id,)).fetchone()
     if c is None:
         return f"Challenger {challenger_id} bestaat niet. Er is niets veranderd."
@@ -272,20 +286,29 @@ def verwerk(
         return f"Challenger {challenger_id} afgewezen. Er is niets aan de instellingen veranderd."
 
     # akkoord
-    zet_in_config(config_pad, c["strategie"], c["parameter"], c["nieuwe_waarde"])
+    if not droog:
+        zet_in_config(config_pad, c["strategie"], c["parameter"], c["nieuwe_waarde"])
+    toevoeging = " (droogtest, config.yaml niet aangepast)" if droog else ""
     con.execute(
         "UPDATE challengers SET status='aangenomen', uitslag=uitslag || ? WHERE id=?",
-        (f" Aangenomen via Telegram ({wanneer}).", challenger_id),
+        (f" Aangenomen via Telegram ({wanneer}){toevoeging}.", challenger_id),
     )
     con.execute(
         """INSERT INTO wijzigingen (datum, strategie, parameter, oude_waarde, nieuwe_waarde,
                                     challenger_id, akkoord)
            VALUES (?,?,?,?,?,?,?)""",
         (datum, c["strategie"], c["parameter"], c["oude_waarde"], c["nieuwe_waarde"],
-         challenger_id, f"Telegram, {wanneer}"),
+         challenger_id, f"Telegram, {wanneer}{toevoeging}"),
     )
     _sluit_portefeuilles(con, c)
     con.commit()
+    if droog:
+        return (
+            f"Droogtest: akkoord ontvangen en verwerkt voor challenger {challenger_id}. In de "
+            f"echte meting zou {c['strategie']}.{c['parameter']} nu van "
+            f"{_mooi(c['oude_waarde'])} naar {_mooi(c['nieuwe_waarde'])} gaan. In de proefweek "
+            f"is config.yaml NIET aangepast. De akkoordroute werkt."
+        )
     return (
         f"Akkoord verwerkt. {c['strategie']}.{c['parameter']} staat nu op "
         f"{_mooi(c['nieuwe_waarde'])} (was {_mooi(c['oude_waarde'])}). Dat geldt vanaf de "

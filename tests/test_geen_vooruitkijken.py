@@ -47,6 +47,26 @@ def test_kengetallen_veranderen_niet_door_latere_data(afkap):
         )
 
 
+@pytest.mark.parametrize("naam", ["ma30", "ma150", "rsi10", "rend90"])
+def test_kengetallen_op_aanvraag_kijken_ook_niet_vooruit(naam):
+    """Een challenger kan andere kengetallen vragen. Ook die mogen niet vooruitkijken."""
+    reeks = list(_reeks(260))
+    datums = werkdagen(260)
+    vol = maak_markt({"AAA": reeks}, datums)
+    afkap = 200
+    kort = maak_markt({"AAA": reeks[: afkap + 1]}, datums[: afkap + 1])
+    a = vol.kengetal("AAA", datums[afkap], naam)
+    b = kort.kengetal("AAA", datums[afkap], naam)
+    assert a is not None
+    assert a == pytest.approx(b, rel=1e-12)
+
+
+def test_onbekend_kengetal_geeft_niets():
+    datums = werkdagen(5)
+    markt = maak_markt({"AAA": [1.0] * 5}, datums)
+    assert markt.kengetal("AAA", datums[-1], "maan7") is None
+
+
 def test_tot_en_met_geeft_nooit_latere_dagen():
     datums = werkdagen(10)
     markt = maak_markt({"AAA": [10.0] * 10}, datums)

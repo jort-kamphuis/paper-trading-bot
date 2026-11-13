@@ -19,3 +19,6 @@ data/cache/
 # De backtest is een wegwerpbestand en blijft lokaal.
 data/backtest.db
 data/*.db-journal
+
+# Tijdelijk bestand van de nachtronde, voor het commitbericht na een akkoord.
+.wijziging.txt

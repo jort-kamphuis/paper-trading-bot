@@ -28,7 +28,15 @@ def main() -> int:
     p = argparse.ArgumentParser(description="De meting opnieuw beginnen")
     p.add_argument("--ja", action="store_true", help="niet om bevestiging vragen")
     p.add_argument("--db", default=None, help="pad naar de database")
+    p.add_argument(
+        "--boek-usd", type=float, default=None,
+        help="ook AI-kosten boeken die buiten de bot om zijn gemaakt",
+    )
+    p.add_argument("--reden", default="", help="waarom die kosten geboekt worden")
     args = p.parse_args()
+    if args.boek_usd is not None and not args.reden.strip():
+        print("Geef bij --boek-usd ook een --reden op.")
+        return 1
 
     con = database.verbind(args.db)
 
@@ -47,7 +55,10 @@ def main() -> int:
     print(f"  meting gestart op : {start}")
     print(f"  trades            : {aantal_trades}")
     print(f"  gemeten dagen     : {aantal_dagen}")
-    print("De koersen blijven staan.")
+    print("  en de AI-besluiten, proeven, wijzigingen en rapporten van deze meting.")
+    print("Blijft staan: koersen, nieuws en de AI-kosten (uitgegeven is uitgegeven).")
+    if args.boek_usd is not None:
+        print(f"Daarnaast wordt ${args.boek_usd:.4f} aan AI-kosten geboekt: {args.reden}")
 
     if not args.ja:
         antwoord = input("\nWeet je het zeker? Typ 'ja' om door te gaan: ").strip().lower()
@@ -59,6 +70,11 @@ def main() -> int:
     database.leeg_handelsdata(con)
     con.execute("DELETE FROM instellingen WHERE sleutel = ?", (SLEUTEL_START,))
     con.commit()
+    if args.boek_usd is not None:
+        from datetime import date
+
+        database.boek_correctie(con, date.today().isoformat(), args.boek_usd, args.reden)
+        print(f"${args.boek_usd:.4f} geboekt als correctie.")
     print("\nGewist. Draai nu: python scripts/dagelijks.py")
     con.close()
     return 0

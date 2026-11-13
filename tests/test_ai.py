@@ -490,6 +490,43 @@ def test_past_niet_geeft_voorstellen_en_verandert_niets(con, cfg_ai):
     assert json.dumps(cfg_ai, sort_keys=True) == voor, "de prognose mag niets aanpassen"
 
 
+def test_correctie_telt_mee_in_het_budget_maar_niet_in_de_prognose(con, cfg_ai):
+    from bot import database
+    from bot.ai.kostenprognose import maak_prognose
+
+    cfg_ai["ai_watchlist"] = ["AAA"]
+    _besluit_rij(con, "ai_analist", "AAA", "2026-11-13", 0.010)
+    con.commit()
+    zonder = maak_prognose(con, cfg_ai).maand_usd
+    database.boek_correctie(con, "2026-11-13", 0.2339, "proef op een kopie riep de API aan")
+    assert maak_prognose(con, cfg_ai).maand_usd == pytest.approx(zonder)
+    assert Budget(con, cfg_ai, vandaag="2026-11-13").uitgegeven() == pytest.approx(0.010 + 0.2339)
+
+
+def test_herstart_wist_de_meting_maar_niet_de_kosten(con, cfg_ai):
+    from bot import database
+
+    _besluit_rij(con, "ai_analist", "AAA", "2026-11-13", 0.05)
+    con.commit()
+    database.leeg_handelsdata(con)
+    assert con.execute("SELECT COUNT(*) n FROM ai_besluiten").fetchone()["n"] == 0
+    assert con.execute("SELECT COUNT(*) n FROM ai_kosten").fetchone()["n"] == 1, "uitgegeven is uitgegeven"
+
+
+def test_sterk_signaal_voorstel_zegt_wat_je_inlevert(con, cfg_ai):
+    from bot.ai.kostenprognose import maak_prognose
+
+    cfg_ai["ai_watchlist"] = ["AAA", "BBB"]
+    zwak = {"technisch": {"signaal": "positief", "zekerheid": 0.4}, "nieuws": {"signaal": "neutraal"}}
+    for dag in ("2026-11-11", "2026-11-12", "2026-11-13"):
+        _besluit_rij(con, "ai_analist", "AAA", dag, 1.0, stappen=zwak)
+        _besluit_rij(con, "ai_analist", "BBB", dag, 1.0, stappen=zwak)
+    con.commit()
+    tekst = " ".join(maak_prognose(con, cfg_ai).voorstellen)
+    assert "bij maar 0 van de 6 debatten" in tekst
+    assert "veel minder handelen" in tekst
+
+
 def test_prognose_zonder_metingen(con, cfg_ai):
     from bot.ai.kostenprognose import maak_prognose
 

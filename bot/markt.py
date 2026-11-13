@@ -115,10 +115,38 @@ class Markt:
             valuta=str(rij["valuta"]),
         )
 
+    @staticmethod
+    def _zorg_voor(df: pd.DataFrame, naam: str) -> bool:
+        """Reken een kengetal uit als het er nog niet is, zoals 'ma30' of 'rend90'.
+
+        Zo kan een challenger met andere instellingen (bijvoorbeeld 90 dagen
+        terugkijken in plaats van 60) gewoon draaien. Ook deze kengetallen
+        kijken alleen achteruit, net als de vaste (zie indicatoren.py).
+        Geeft False bij een naam die we niet kennen.
+        """
+        if naam in df.columns:
+            return True
+        import re
+
+        gevonden = re.fullmatch(r"(ma|rsi|rend)(\d+)", naam)
+        if not gevonden:
+            return False
+        soort, periode = gevonden.group(1), int(gevonden.group(2))
+        if periode < 1:
+            return False
+        slot = df["slot"]
+        if soort == "ma":
+            df[naam] = indicatoren.voortschrijdend_gemiddelde(slot, periode)
+        elif soort == "rsi":
+            df[naam] = indicatoren.rsi(slot, periode)
+        else:
+            df[naam] = indicatoren.rendement_over(slot, periode)
+        return True
+
     def kengetal(self, symbool: str, datum: str, naam: str) -> float | None:
         """Een kengetal op die dag, bijvoorbeeld 'rsi14'. None als het er niet is."""
         df = self._data.get(symbool)
-        if df is None or datum not in df.index or naam not in df.columns:
+        if df is None or datum not in df.index or not self._zorg_voor(df, naam):
             return None
         waarde = df.at[datum, naam]
         if pd.isna(waarde):
@@ -128,7 +156,7 @@ class Markt:
     def kengetal_vorige_dag(self, symbool: str, datum: str, naam: str) -> float | None:
         """Hetzelfde kengetal, maar van de vorige beursdag van dit symbool."""
         df = self._data.get(symbool)
-        if df is None or datum not in df.index:
+        if df is None or datum not in df.index or not self._zorg_voor(df, naam):
             return None
         plek = df.index.get_loc(datum)
         if not isinstance(plek, int) or plek < 1:

@@ -26,6 +26,7 @@ def bouw_motor(
     begin: str,
     stil: bool = True,
     met_ai: bool = False,
+    met_challengers: bool = False,
 ) -> Motor:
     """Maak de motor met alle regelstrategieën en de meetlatten.
 
@@ -58,6 +59,23 @@ def bouw_motor(
         ai_symbolen = [s for s in cfg.get("ai_watchlist", []) if markt.heeft(s)]
         for naam, model in ai_portefeuilles(cfg):
             motor.voeg_toe(AIStrategie(naam, model_override=model), ai_symbolen, gestart_op=begin)
+
+    if met_challengers:
+        # Elke lopende proef draait als paar: A (huidig) en B (voorstel), met de
+        # instellingen zoals die bij de start van de proef zijn vastgelegd.
+        from bot.challenger import strategieen_voor
+        from bot.strategieen import MeanReversion, Momentum, TrendVolgend
+
+        soorten = {"momentum": Momentum, "mean_reversion": MeanReversion, "trend": TrendVolgend}
+        for strategie, portefeuille, instellingen, gestart_op in strategieen_voor(con):
+            soort = soorten.get(strategie)
+            if soort is None:
+                continue
+            exemplaar = soort(instellingen)
+            exemplaar.naam = portefeuille
+            exemplaar.soort = strategie
+            exemplaar.variant = "challenger"
+            motor.voeg_toe(exemplaar, aanwezig, gestart_op=gestart_op)
 
     return motor
 

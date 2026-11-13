@@ -14,7 +14,7 @@ geen aanbeveling om iets te kopen of te verkopen.
 
 ---
 
-## Wat er nu klaar is (stap 4 van 6)
+## Wat er nu klaar is (stap 5 van 6)
 
 | Onderdeel | Status |
 |---|---|
@@ -30,7 +30,8 @@ geen aanbeveling om iets te kopen of te verkopen.
 | Kostenmeting en maandprognose van de AI | klaar |
 | Elke nacht automatisch draaien via GitHub Actions | klaar, wacht op je Secrets |
 | Dagelijks bericht via Telegram | klaar, wacht op je bot |
-| Weekrapport en challenger | stap 5 |
+| Weekrapport met conclusies van Claude | klaar |
+| Challenger: een verbetering eerlijk testen, pas na jouw akkoord | klaar |
 | Streamlit-dashboard | stap 6 |
 
 ---
@@ -85,11 +86,17 @@ Of op GitHub: tabblad **Actions**, dan **Dagelijkse ronde**, dan **Run workflow*
 
 1. De tests draaien. Slaagt er een niet, dan wordt er die nacht niet gehandeld
    en krijg je een melding.
-2. De koersen worden opnieuw opgehaald, alleen van dagen die af zijn.
-3. De motor voert de orders van gisteren uit en de strategieën beslissen.
-4. De AI-analist denkt na over de nieuwste dag.
-5. Je krijgt een kort bericht in Telegram, zonder geluid.
-6. De database wordt klein gemaakt en terug in de repository gezet. Zo blijven
+2. De koersen worden opnieuw opgehaald, alleen van dagen die af zijn. Een
+   aandeel dat ontbreekt, wordt nog drie keer los geprobeerd.
+3. **Zijn de koersen compleet?** Ontbreekt er nog steeds een symbool, of mist een
+   aandeel een beursdag, dan wordt er die nacht niet gehandeld. Je krijgt een
+   melding en de volgende nacht wordt de dag ingehaald. Liever een nacht
+   overslaan dan stilletjes handelen op een gat.
+4. De motor voert de orders van gisteren uit en de strategieën beslissen.
+5. De AI-analist denkt na over de nieuwste dag.
+6. Op zondag: het weekrapport (zie hieronder).
+7. Je krijgt een kort bericht in Telegram, zonder geluid.
+8. De database wordt klein gemaakt en terug in de repository gezet. Zo blijven
    de resultaten bewaard. Je ziet dat als een commit "Dagelijkse ronde".
 
 Gaat er iets mis, dan krijg je een bericht in Telegram met een link naar het
@@ -111,6 +118,72 @@ git pull
 `dagelijks.py` weigert dan lokaal te draaien. Anders zou je lokale kopie een
 andere meting worden en botst het bij de volgende `git pull`. De backtest heeft
 een eigen database (`data/backtest.db`) en kan dus gewoon lokaal.
+
+---
+
+## Het weekrapport en de challenger
+
+### Het weekrapport
+
+Elke zondagnacht (in de ronde van 00:30 UTC) krijg je in Telegram het weekrapport.
+Per strategie:
+
+* het rendement, totaal en deze week;
+* hoeveel trades er waren en welk deel winst gaf;
+* de grootste daling en de Sharpe ratio;
+* **hoeveel van het geld gemiddeld belegd was**, zodat je ziet hoe groot het
+  voordeel van de meetlat is (die zet alles in een keer in);
+* de vergelijking met SPY en BTC, met een p-waarde: is het verschil al
+  betekenisvol, of kan het nog geluk zijn;
+* hoeveel trades er nog nodig zijn voor een harde uitspraak.
+
+Daaronder schrijft Claude **drie conclusies** in gewone taal, op basis van alleen
+die cijfers, en **hooguit één voorstel**. In de eerste weken is "het is nog te
+vroeg" vaak het eerlijke antwoord, en geen voorstel ook.
+
+Mislukt de ronde op zondag, dan komt het rapport de eerstvolgende nacht. Er wordt
+nooit twee keer een rapport over dezelfde dag gemaakt (of betaald). Wil je er
+een met de hand: start de workflow en kies bij **weekrapport** voor `ja`.
+
+### De challenger
+
+Een voorstel mag alleen **één getal in de instellingen van één regelstrategie**
+veranderen, binnen vaste grenzen (`config.yaml`, onder `challenger.toegestaan`).
+Iets anders kan Claude niet voorstellen: de bot gooit het weg en zegt waarom.
+
+Een geldig voorstel start als eerlijk paar: **twee nieuwe portefeuilles** van
+€1.000, op dezelfde dag. `..._A1` met de huidige instellingen, `..._B1` met de
+voorgestelde. Verder zijn ze gelijk. Zo vergelijk je alleen het verschil in die
+ene instelling, en niet een verse portefeuille met een die al weken loopt.
+
+Na **4 weken** vergelijkt de bot A en B over dezelfde dagen:
+
+* **B niet beter?** De proef stopt. Er verandert niets.
+* **B beter?** Je krijgt in Telegram de uitslag, met de p-waarde erbij, en de vraag:
+
+```
+/akkoord 1
+```
+
+of
+
+```
+/afwijzen 1
+```
+
+Pas na `/akkoord` past de bot `config.yaml` aan. Dat gebeurt in een eigen commit
+("Akkoord via Telegram"), het staat in de tabel `wijzigingen` met de datum, en je
+krijgt een bevestiging. Zonder antwoord verandert er niets en loopt de proef door;
+de vraag komt elke week terug.
+
+**Eerlijk over die 4 weken:** dat is statistisch weinig. Een beter rendement in
+4 weken kan heel goed toeval zijn. Kijk daarom bij je akkoord naar de p-waarde.
+Ligt die boven 0,05, dan is het verschil nog niet te onderscheiden van geluk.
+
+Hooguit één proef tegelijk. De bot reageert alleen op berichten uit jouw eigen
+chat, en alleen op precies deze twee opdrachten. Telegram bewaart berichten aan
+een bot ongeveer een dag; antwoord je en mist de bot de nacht erna, stuur het dan
+gerust opnieuw.
 
 ---
 
@@ -395,7 +468,11 @@ paper-trading-bot/
 │   ├── statistiek.py        rendement, risico en "is dit al iets?"
 │   ├── opzet.py             zet alle strategieën klaar
 │   ├── overzicht.py         teksten over de stand, ook het Telegram-bericht
-│   ├── telegram.py          berichten naar Telegram
+│   ├── telegram.py          berichten naar Telegram, en je antwoorden lezen
+│   ├── volledigheid.py      zijn de koersen compleet genoeg om te handelen?
+│   ├── rapport.py           de cijfers van het weekrapport
+│   ├── weekrapport.py       het hele weekrapport
+│   ├── challenger.py        een verbetering eerlijk testen, en je akkoord
 │   ├── data/                koersen, wisselkoers en nieuws ophalen
 │   ├── strategieen/         de strategieën en de meetlat
 │   └── ai/                  de AI-analist
@@ -404,7 +481,8 @@ paper-trading-bot/
 │       ├── ronde.py         de dagelijkse denkronde
 │       ├── client.py        de verbinding met de Claude-API
 │       ├── budget.py        de budgetbewaking
-│       └── kostenprognose.py  past het in een maand?
+│       ├── kostenprognose.py  past het in een maand?
+│       └── weekoordeel.py   de drie conclusies en het voorstel
 ├── scripts/
 │   ├── vernieuw_data.py     koersen ophalen
 │   ├── dagelijks.py         de dagelijkse ronde
@@ -416,7 +494,7 @@ paper-trading-bot/
 │   ├── zet_github_secrets.py  sleutels uit .env naar GitHub Secrets
 │   ├── slank_maken.py       database klein maken voor git (door GitHub)
 │   └── meld_fout.py         foutmelding naar Telegram (door GitHub)
-└── tests/                   119 tests
+└── tests/                   175 tests
 ```
 
 ### Wanneer begint de meting
@@ -444,6 +522,12 @@ later van start dan de rest. Nu beginnen ze allemaal tegelijk.
 * **De Claude-sleutel gaat niet door de code van de bot.** De officiële
   bibliotheek van Anthropic leest hem zelf uit de omgeving, zodat hij nergens in
   een logregel of foutmelding kan belanden.
+* **De AI kost alleen geld op de echte database.** Draai je de ronde op een kopie
+  (`--db`), dan slaat de bot de AI over. Anders betaal je voor besluiten in een
+  bestand dat je weggooit. Wil je het toch: `--ai-op-kopie`.
+* **Opnieuw beginnen wist geen kosten.** `herstart_meting.py` wist de meting,
+  maar de AI-kosten van de maand blijven staan, want die zijn echt betaald. Kosten
+  die buiten de bot om zijn gemaakt, boek je met `--boek-usd` en `--reden`.
 * **Vaste versies.** `requirements.txt` legt de versie van elk pakket vast,
   zodat een update halverwege de meting niet ongemerkt iets verandert.
 * **De Telegram-sleutel zit in elk internetadres van Telegram.** Een

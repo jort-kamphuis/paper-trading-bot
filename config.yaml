@@ -197,7 +197,38 @@ prijzen:
   claude-sonnet-5-5: {invoer: 2.00, uitvoer: 10.00}
   claude-opus-5-5:   {invoer: 4.00, uitvoer: 20.00}
 
+challenger:
+  # Hoe lang een voorgestelde verbetering naast het origineel draait voordat er
+  # beoordeeld wordt. Let op: 4 weken zegt statistisch weinig; het weekrapport
+  # zet er daarom de p-waarde bij.
+  weken: 4
+  # Het model dat de conclusies schrijft en het voorstel doet, een keer per week.
+  model: claude-sonnet-5-5
+  max_tokens: 6000
+  inspanning: medium
+  # Alleen deze instellingen mogen worden voorgesteld, en alleen binnen deze
+  # grenzen. Iets anders voorstellen kan niet: de bot gooit het weg.
+  # 'geheel: true' betekent een heel getal (bijvoorbeeld een aantal dagen).
+  toegestaan:
+    momentum:
+      terugblik_dagen:    {min: 20, max: 250, geheel: true}
+      aantal_posities:    {min: 3,  max: 10,  geheel: true}
+      verkoop_buiten_top: {min: 5,  max: 30,  geheel: true}
+      min_stijging_pct:   {min: 0,  max: 20}
+    mean_reversion:
+      koop_onder:           {min: 10, max: 40}
+      verkoop_boven:        {min: 45, max: 80}
+      max_dagen_vasthouden: {min: 5,  max: 60, geheel: true}
+    trend:
+      snelle_ma:   {min: 5,  max: 50,  geheel: true}
+      langzame_ma: {min: 50, max: 250, geheel: true}
+
 rapport:
+  # Op welke dag van de week het weekrapport komt (0 = maandag, 6 = zondag),
+  # gerekend in UTC op het moment dat de nachtronde draait. De nachtronde van
+  # zondag 00:30 UTC sluit de week af met de koersen tot en met vrijdag (aandelen)
+  # en zaterdag (crypto).
+  weekdag: 6
   # Het symbool dat de meetkalender bepaalt: de dagen dat de Amerikaanse beurs
   # open was. Daarop beginnen alle portefeuilles tegelijk, en daarop worden de
   # Sharpe ratio en de grootste daling gerekend. Zo is een portefeuille vol

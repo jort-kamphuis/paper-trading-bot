@@ -18,6 +18,12 @@ on:
     - cron: "30 0 * * *"
   # Zo kun je hem ook zelf starten, via het tabblad Actions.
   workflow_dispatch:
+    inputs:
+      weekrapport:
+        description: "Weekrapport maken? (auto = alleen op de rapportdag)"
+        type: choice
+        options: [auto, ja, nee]
+        default: auto
 
 permissions:
   contents: write
@@ -55,7 +61,11 @@ jobs:
         id: ronde
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: python scripts/dagelijks.py --telegram
+          # Via een variabele, niet rechtstreeks in de opdracht: zo kan een
+          # invoerwaarde nooit als opdracht worden uitgevoerd. Het script
+          # accepteert bovendien alleen auto, ja of nee.
+          WEEKRAPPORT: ${{ inputs.weekrapport || 'auto' }}
+        run: python scripts/dagelijks.py --telegram --weekrapport "$WEEKRAPPORT"
 
       # Ook na een mislukte ronde: de AI-kosten en -beslissingen zijn per symbool
       # vastgelegd. Gooi je die weg, dan betaalt de bot morgen opnieuw voor
@@ -67,12 +77,17 @@ jobs:
           python scripts/slank_maken.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/trading.db
+          # config.yaml verandert alleen na jouw /akkoord in Telegram.
+          git add data/trading.db config.yaml
           if git diff --cached --quiet; then
-            echo "Database niet veranderd."
+            echo "Niets veranderd."
             exit 0
           fi
-          git commit -m "Dagelijkse ronde $(date -u +%Y-%m-%d)"
+          if [ -f .wijziging.txt ]; then
+            git commit -m "Akkoord via Telegram: instelling aangepast" -m "$(cat .wijziging.txt)"
+          else
+            git commit -m "Dagelijkse ronde $(date -u +%Y-%m-%d)"
+          fi
           git pull --rebase origin main
           git push origin HEAD:main
 

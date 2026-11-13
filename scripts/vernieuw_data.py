@@ -48,13 +48,12 @@ def main() -> int:
         if all(laatsten) and laatsten:
             oudste = min(d for d in laatsten if d)
             start = max(start_vol, (date.fromisoformat(oudste) - timedelta(days=5)).isoformat())
-    rijen = mod_koersen.haal_aandelen(aandelen, start=start, eind=morgen)
+    rijen, redenen = mod_koersen.haal_aandelen_met_herkansing(aandelen, start=start, eind=morgen)
     aantal = database.bewaar_koersen(con, rijen)
     gevonden = sorted({r["symbool"] for r in rijen})
     print(f"  {aantal} dagkoersen opgeslagen voor {len(gevonden)} symbolen")
-    ontbreekt = [s for s in aandelen if s not in gevonden]
-    if ontbreekt:
-        print(f"  LET OP: geen data voor {ontbreekt}")
+    for symbool, reden in redenen.items():
+        print(f"  LET OP: geen data voor {symbool}, ook niet na herkansing ({reden})")
 
     # ---- crypto ----
     print(f"\nCrypto ophalen ({len(crypto)} paren)...")

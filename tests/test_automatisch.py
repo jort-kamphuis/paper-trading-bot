@@ -159,7 +159,7 @@ def test_slank_maken_houdt_de_meting_en_de_kalender(con):
 def _args(db: str, **extra):
     standaard = dict(
         geen_data=True, jaren=2.0, tot=None, db=db, start=None,
-        geen_ai=True, telegram=False, lokaal=False,
+        geen_ai=True, telegram=False, lokaal=False, weekrapport="nee", ai_op_kopie=False,
     )
     standaard.update(extra)
     return argparse.Namespace(**standaard)
@@ -201,6 +201,17 @@ def test_op_github_wordt_onthouden(tmp_path, monkeypatch):
     con.close()
 
 
+def test_ai_kost_alleen_geld_op_de_echte_database(tmp_path):
+    """Dit ging mis: een proef op een kopie deed echte API-aanroepen."""
+    dagelijks = _laad_script("dagelijks")
+    from bot import config as conf
+
+    assert dagelijks._ai_mag(_args(None))
+    assert dagelijks._ai_mag(_args(str(conf.DB_PAD)))
+    assert not dagelijks._ai_mag(_args(str(tmp_path / "kopie.db")))
+    assert dagelijks._ai_mag(_args(str(tmp_path / "kopie.db"), ai_op_kopie=True))
+
+
 def test_het_ophalen_gebruikt_dezelfde_database(monkeypatch):
     """Dit ging mis: het ophaalscript kreeg --db niet mee en schreef naar de echte database."""
     dagelijks = _laad_script("dagelijks")
@@ -229,6 +240,11 @@ def test_workflow_bevat_de_veiligheidsstappen():
     assert tekst.index("pytest") < tekst.index("scripts/dagelijks.py"), "tests eerst"
     assert "slank_maken.py" in tekst
     assert "secrets.ANTHROPIC_API_KEY" in tekst
+    # Invoer nooit rechtstreeks in een opdrachtregel (script injection).
+    for regel in tekst.splitlines():
+        if regel.strip().startswith("run:"):
+            assert "${{ inputs." not in regel, f"invoer direct in een opdracht: {regel.strip()}"
+    assert "config.yaml" in tekst, "na een akkoord moet config.yaml mee in de commit"
     # Nergens een sleutel in de tekst zelf.
     for verboden in ("sk-ant-", "api_key:", "token:"):
         assert verboden not in tekst

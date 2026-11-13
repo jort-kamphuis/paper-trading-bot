@@ -22,6 +22,7 @@ from bot.config import is_crypto
 # ongeveer 252 dagen per jaar open, crypto elke dag.
 BEURSDAGEN_PER_MAAND = 252 / 12
 CRYPTODAGEN_PER_MAAND = 365.25 / 12
+WEKEN_PER_MAAND = 365.25 / 12 / 7
 
 # Zo heet een besluit waarvoor geen enkele API-aanroep nodig was.
 GEEN_KOERS = "geen koers op deze dag"
@@ -100,6 +101,18 @@ def maak_prognose(con: sqlite3.Connection, cfg: dict) -> Prognose:
             f"{pf}: gemiddeld ${algemeen:.4f} per symbool-dag "
             f"({len(alles)} gemeten), naar schatting ${maand:.2f} per maand"
         )
+    # Het weekrapport kost ook iets: een vraag per week.
+    rapport = con.execute(
+        """SELECT COUNT(DISTINCT datum) n, COALESCE(SUM(kosten_usd), 0) s
+           FROM ai_kosten WHERE rol = 'rapport'"""
+    ).fetchone()
+    if rapport["n"]:
+        per_rapport = float(rapport["s"]) / int(rapport["n"])
+        per_maand = per_rapport * WEKEN_PER_MAAND
+        totaal += per_maand
+        prognose.uitleg.append(
+            f"weekrapport: gemiddeld ${per_rapport:.4f} per keer, ${per_maand:.2f} per maand"
+        )
     prognose.maand_usd = totaal
 
     if prognose.past:
@@ -128,7 +141,15 @@ def maak_prognose(con: sqlite3.Connection, cfg: dict) -> Prognose:
         )
 
     # 3. Het debat alleen bij een sterk signaal.
-    debat_kosten, debat_sterk = 0.0, 0.0
+    # De analisten draaien hoe dan ook; alleen het debat (bull, bear, risk)
+    # valt weg. Wat de analisten per besluit kosten, rekenen we uit hun eigen
+    # boekingen, zodat dat niet als besparing meetelt.
+    analisten = con.execute(
+        "SELECT COALESCE(SUM(kosten_usd), 0) s FROM ai_kosten WHERE rol IN ('technisch', 'nieuws')"
+    ).fetchone()["s"]
+    analist_per_besluit = float(analisten) / len(besluiten) if besluiten else 0.0
+
+    gedebatteerd, zou_blijven, bespaard = 0, 0, 0.0
     for b in besluiten:
         if b["overgeslagen"]:
             continue  # er was geen debat
@@ -136,25 +157,25 @@ def maak_prognose(con: sqlite3.Connection, cfg: dict) -> Prognose:
             stappen = json.loads(b["stappen"] or "{}")
         except json.JSONDecodeError:
             continue
+        gedebatteerd += 1
         sterk = any(
             (stappen.get(r) or {}).get("signaal") not in (None, "neutraal")
             and float((stappen.get(r) or {}).get("zekerheid") or 0) >= STERK
             for r in ("technisch", "nieuws")
         )
-        debat_kosten += float(b["kosten_usd"] or 0.0)
         if sterk:
-            debat_sterk += float(b["kosten_usd"] or 0.0)
+            zou_blijven += 1
+        else:
+            bespaard += max(0.0, float(b["kosten_usd"] or 0.0) - analist_per_besluit)
     gemeten = sum(float(b["kosten_usd"] or 0.0) for b in besluiten)
-    if debat_kosten > 0 and gemeten > 0:
-        aandeel_bespaard = (debat_kosten - debat_sterk) / gemeten
-        # Ruwe schatting: de besparing op de verzamelrollen blijft, het debat
-        # valt weg bij de besluiten zonder sterk signaal.
+    if gedebatteerd and gemeten > 0:
+        aandeel = bespaard / gemeten
         prognose.voorstellen.append(
             f"Debat alleen bij een sterk signaal (een analist met zekerheid {STERK} of meer): "
-            f"scheelt naar schatting {100 * aandeel_bespaard:.0f}% van de kosten, ongeveer "
-            f"${totaal * aandeel_bespaard:.2f} per maand. Let op: deze schatting telt de "
-            f"kosten van de analisten bij die besluiten als besparing mee en is dus wat te "
-            f"gunstig."
+            f"scheelt naar schatting {100 * aandeel:.0f}%, ongeveer ${totaal * aandeel:.2f} per "
+            f"maand. Maar dan was er bij maar {zou_blijven} van de {gedebatteerd} debatten "
+            f"nog een debat geweest. Zonder debat beslist de AI altijd NIETS, dus hij zou dan "
+            f"veel minder handelen en je meet een andere AI-analist dan nu."
         )
 
     return prognose

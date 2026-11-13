@@ -47,6 +47,18 @@ def _op_github() -> bool:
     return os.environ.get("GITHUB_ACTIONS") == "true"
 
 
+def _ai_mag(args) -> bool:
+    """De AI kost echt geld. Dat mag alleen op de echte database.
+
+    Draait iemand de ronde op een kopie (om iets uit te proberen), dan slaat de
+    bot de AI over. Anders betaal je voor besluiten in een bestand dat je
+    daarna weggooit, en weet de budgetteller van de echte meting er niets van.
+    """
+    if args.db is None or args.ai_op_kopie:
+        return True
+    return Path(args.db).resolve() == conf.DB_PAD.resolve()
+
+
 def _haal_data_op(jaren: float, waarschuwingen: list[str], db: str | None = None) -> bool:
     """Roep het ophaalscript aan, voor dezelfde database. Geeft False als dat misgaat."""
     script = Path(__file__).resolve().parent / "vernieuw_data.py"
@@ -68,8 +80,14 @@ def _haal_data_op(jaren: float, waarschuwingen: list[str], db: str | None = None
     for regel in uitkomst.stdout.splitlines():
         if "LET OP" in regel:
             waarschuwingen.append(regel.strip())
-        if "LET OP" in regel or "opgeslagen" in regel or " via " in regel:
+        if "LET OP" in regel or "opgeslagen" in regel or " via " in regel or "herkansing" in regel:
             print(f"  {regel.strip()}")
+    # Wat yfinance en ccxt zelf melden, komt op een apart kanaal. Bij problemen
+    # tonen we dat, anders weet je niet waarom iets ontbrak.
+    if waarschuwingen and uitkomst.stderr.strip():
+        print("  Meldingen van de koersbronnen:")
+        for regel in uitkomst.stderr.strip().splitlines()[-15:]:
+            print(f"    {regel}")
     return True
 
 
@@ -154,11 +172,65 @@ def _ai_ronde(
     return bericht
 
 
+SLEUTEL_TELEGRAM_OFFSET = "telegram_offset"
+# Hierin zet de ronde een beschrijving van een goedgekeurde wijziging, zodat
+# GitHub Actions die in het commitbericht kan zetten. Staat in .gitignore.
+WIJZIGING_BESTAND = conf.PROJECT / ".wijziging.txt"
+
+
+def _verwerk_antwoorden(con, datum: str) -> list[str]:
+    """Lees je /akkoord en /afwijzen uit Telegram en voer ze uit.
+
+    Alleen berichten uit jouw eigen chat tellen, en alleen die twee opdrachten.
+    Al het andere wordt genegeerd. Geeft de antwoorden terug die de bot stuurt.
+    """
+    from bot import challenger, telegram
+
+    if not telegram.is_ingesteld():
+        return []
+    token = conf.sleutel("TELEGRAM_BOT_TOKEN")
+    chat = conf.sleutel("TELEGRAM_CHAT_ID")
+    opgeslagen = database.lees_instelling(con, SLEUTEL_TELEGRAM_OFFSET)
+    try:
+        berichten, volgende = telegram.lees_berichten(
+            token, chat, int(opgeslagen) if opgeslagen else None
+        )
+    except telegram.TelegramFout as fout:
+        print(f"Telegram-berichten lezen lukte niet: {fout}")
+        return []
+
+    antwoorden: list[str] = []
+    wijzigingen: list[str] = []
+    for bericht in berichten:
+        opdracht = challenger.lees_opdracht(bericht["tekst"])
+        if opdracht is None:
+            continue
+        actie, nummer = opdracht
+        antwoord = challenger.verwerk(
+            con, conf.CONFIG_PAD, actie, nummer, wanneer=bericht["wanneer"], datum=datum
+        )
+        print(f"Telegram: /{actie} {nummer} -> {antwoord}")
+        antwoorden.append(antwoord)
+        if actie == "akkoord" and antwoord.startswith("Akkoord verwerkt"):
+            wijzigingen.append(antwoord)
+
+    if volgende is not None:
+        database.zet_instelling(con, SLEUTEL_TELEGRAM_OFFSET, str(volgende))
+        try:
+            telegram.bevestig(token, volgende)
+        except telegram.TelegramFout:
+            pass  # de offset staat opgeslagen; volgende keer slaan we ze alsnog over
+    if wijzigingen:
+        WIJZIGING_BESTAND.write_text("\n".join(wijzigingen) + "\n", encoding="utf-8")
+    return antwoorden
+
+
 def ronde(args) -> tuple[int, str | None]:
     """De ronde zelf. Geeft de afsluitcode en het dagbericht voor Telegram."""
     cfg = conf.laad()
     con = database.verbind(args.db)
     waarschuwingen: list[str] = []
+    args.berichten = []  # extra berichten voor Telegram (weekrapport, vragen)
 
     print(f"Dagelijkse ronde, {date.today().isoformat()}")
     print("=" * 60)
@@ -177,6 +249,14 @@ def ronde(args) -> tuple[int, str | None]:
         )
         con.close()
         return 2, None
+
+    # ---- 0b. je antwoorden uit Telegram ----
+    antwoorden: list[str] = []
+    if args.telegram:
+        laatste = con.execute("SELECT MAX(datum) d FROM waarde").fetchone()["d"]
+        antwoorden = _verwerk_antwoorden(con, laatste or date.today().isoformat())
+        if antwoorden:
+            cfg = conf.laad()  # een akkoord kan een instelling hebben veranderd
 
     # ---- 1. koersen ----
     if args.geen_data:
@@ -226,18 +306,47 @@ def ronde(args) -> tuple[int, str | None]:
     motor = bouw_motor(
         con, cfg, markt, wk, begin=start, stil=False,
         met_ai=bool(cfg.get("ai", {}).get("actief")),
+        met_challengers=True,
     )
     print(f"{len(motor.deelnemers)} portefeuilles.")
 
-    # Begin bij de oudste dag die nog niet voor iedereen af is.
+    # Begin bij de oudste dag die nog niet voor iedereen af is. Een portefeuille
+    # die nog nooit gedraaid heeft (zoals een nieuwe challenger) begint op zijn
+    # eigen startdag, niet op de start van de hele meting.
     laatst_gedaan = [
-        database.laatste_verwerkte_dag(con, d.portefeuille.naam) for d in motor.deelnemers
+        database.laatste_verwerkte_dag(con, d.portefeuille.naam) or d.portefeuille.gestart_op or start
+        for d in motor.deelnemers
     ]
-    vanaf = min(laatst_gedaan) if laatst_gedaan and all(laatst_gedaan) else start
+    vanaf = min(laatst_gedaan) if laatst_gedaan else start
     vanaf = max(vanaf, start)
 
     te_doen = [d for d in markt.datums if vanaf <= d <= tot]
     print(f"Te verwerken: {vanaf} tot en met {tot} ({len(te_doen)} dagen in de data).")
+
+    # ---- 3b. zijn de koersen compleet? ----
+    from bot import volledigheid
+
+    problemen = volledigheid.controleer(markt, cfg, te_doen)
+    if problemen:
+        print("\nDE KOERSEN ZIJN NIET COMPLEET. Vannacht wordt er niet gehandeld:")
+        for p in problemen:
+            print(f"  {p}")
+        print(
+            "De volgende ronde haalt deze dag(en) vanzelf in, met complete koersen.\n"
+            "Blijft een symbool wegvallen, haal het dan uit config.yaml."
+        )
+        tekst = overzicht.telegram_dagbericht(
+            con,
+            tot,
+            extra=[
+                "Vannacht NIET gehandeld: de koersen zijn niet compleet.",
+                *[f"  {p}" for p in problemen[:8]],
+                "De volgende ronde haalt dit vanzelf in. Blijft een symbool wegvallen, "
+                "haal het dan uit config.yaml.",
+            ],
+        )
+        con.close()
+        return 0, tekst
 
     # ---- 4. draaien ----
     if te_doen:
@@ -249,17 +358,42 @@ def ronde(args) -> tuple[int, str | None]:
 
     # ---- 5. de AI-analist ----
     ai_regels: list[str] = []
-    if not args.geen_ai:
+    if not args.geen_ai and not _ai_mag(args):
+        print(
+            "\nAI-analist overgeslagen: dit is niet de echte database. De AI kost echt geld;\n"
+            "gebruik --ai-op-kopie als je dat hier toch wilt."
+        )
+        ai_regels = ["AI-analist overgeslagen (niet de echte database)."]
+    elif not args.geen_ai:
         ai_regels = _ai_ronde(
             con, cfg, markt, tot, nieuw_nieuws=not args.geen_data, ingehaald=len(te_doen)
         )
 
-    # ---- 6. het dagbericht ----
+    # ---- 6. het weekrapport ----
+    from bot import weekrapport
+
+    if args.weekrapport == "ja" or (args.weekrapport == "auto" and weekrapport.is_nodig(con, cfg, tot)):
+        print("\nWeekrapport")
+        print("-" * 60)
+        client = None
+        if conf.sleutel("ANTHROPIC_API_KEY") and not args.geen_ai and _ai_mag(args):
+            from bot.ai.ronde import maak_client
+
+            client = maak_client(con, cfg)
+        week = weekrapport.maak(con, cfg, tot, client=client)
+        if week.al_gemaakt:
+            print(f"Er was al een weekrapport over {tot}; niet opnieuw gemaakt (en niet opnieuw betaald).")
+        else:
+            print(week.tekst)
+            args.berichten.append(week.tekst)
+            args.berichten.extend(week.extra_berichten)
+
+    # ---- 7. het dagbericht ----
     print("\n" + "=" * 60)
     print(overzicht.dagbericht(con, tot))
     print("=" * 60)
 
-    extra = list(ai_regels)
+    extra = list(antwoorden) + list(ai_regels)
     if waarschuwingen:
         extra.append("Let op bij het ophalen van koersen:")
         extra.extend(f"  {w}" for w in waarschuwingen[:5])
@@ -279,6 +413,14 @@ def main() -> int:
     p.add_argument("--geen-ai", action="store_true", help="de AI-analist overslaan")
     p.add_argument("--telegram", action="store_true", help="een bericht sturen")
     p.add_argument("--lokaal", action="store_true", help="ook lokaal draaien als de meting op GitHub loopt")
+    p.add_argument(
+        "--ai-op-kopie", action="store_true",
+        help="de AI ook laten draaien (en betalen) als --db naar een kopie wijst",
+    )
+    p.add_argument(
+        "--weekrapport", choices=["auto", "ja", "nee"], default="auto",
+        help="auto: alleen op de rapportdag uit config.yaml",
+    )
     args = p.parse_args()
 
     from bot import telegram
@@ -308,11 +450,12 @@ def main() -> int:
             except telegram.TelegramFout as tfout:
                 print(f"Telegram lukte niet: {tfout}")
         else:
-            try:
-                delen = telegram.stuur(tekst, stil=True)
-                print(f"\nTelegram: bericht verstuurd ({delen} deel/delen).")
-            except telegram.TelegramFout as tfout:
-                print(f"\nTelegram lukte niet: {tfout}")
+            for bericht in [tekst, *getattr(args, "berichten", [])]:
+                try:
+                    delen = telegram.stuur(bericht, stil=True)
+                    print(f"\nTelegram: bericht verstuurd ({delen} deel/delen).")
+                except telegram.TelegramFout as tfout:
+                    print(f"\nTelegram lukte niet: {tfout}")
     return code
 
 

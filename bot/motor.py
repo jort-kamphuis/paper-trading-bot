@@ -66,7 +66,13 @@ class Motor:
         naam = strategie.naam
         pf = Portefeuille.uit_database(self.con, naam, instellingen)
         if pf is None:
-            pf = nieuwe_portefeuille(naam, strategie.naam, instellingen, gestart_op)
+            pf = nieuwe_portefeuille(
+                naam,
+                getattr(strategie, "soort", strategie.naam),
+                instellingen,
+                gestart_op,
+                variant=getattr(strategie, "variant", "standaard"),
+            )
             pf.bewaar(self.con)
             self.con.commit()
         deelnemer = Deelnemer(strategie=strategie, portefeuille=pf, symbolen=list(symbolen))
@@ -135,6 +141,12 @@ class Motor:
         try:
             for deelnemer in self.deelnemers:
                 naam = deelnemer.portefeuille.naam
+                begin = deelnemer.portefeuille.gestart_op
+                if begin and datum < begin:
+                    # Deze portefeuille bestond toen nog niet, bijvoorbeeld een
+                    # challenger die later is gestart. Niet met terugwerkende
+                    # kracht laten meedoen.
+                    continue
                 if database.dag_is_verwerkt(self.con, naam, datum):
                     self.overgeslagen_dagen += 1
                     continue

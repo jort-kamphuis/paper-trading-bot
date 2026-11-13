@@ -282,6 +282,28 @@ def test_wachtrij_in_database_hoort_bij_de_juiste_portefeuille(
     assert [t["portefeuille"] for t in trades] == ["strategie_een", "strategie_twee"]
 
 
+def test_later_gestarte_portefeuille_doet_niet_met_terugwerkende_kracht_mee(
+    con, cfg_min, vaste_wisselkoers
+):
+    """Een challenger die later start, mag niet over eerdere dagen meebeslissen."""
+    markt, datums = _markt()
+    motor = Motor(con, cfg_min, markt, vaste_wisselkoers)
+    vroeg = KooptOpEenDag(datums[0])
+    vroeg.naam = "vroeg"
+    laat = KooptOpEenDag(datums[0])
+    laat.naam = "laat"
+    motor.voeg_toe(vroeg, ["AAA"], gestart_op=datums[0])
+    motor.voeg_toe(laat, ["AAA"], gestart_op=datums[3])
+    motor.draai_periode(datums[0], datums[-1])
+
+    eerste_dag_laat = con.execute(
+        "SELECT MIN(datum) d FROM waarde WHERE portefeuille='laat'"
+    ).fetchone()["d"]
+    assert eerste_dag_laat == datums[3]
+    trades_laat = con.execute("SELECT COUNT(*) n FROM trades WHERE portefeuille='laat'").fetchone()["n"]
+    assert trades_laat == 0, "de late portefeuille kocht op een dag van voor zijn start"
+
+
 def test_startdatum_wordt_onthouden(con):
     assert database.lees_instelling(con, "start_datum") is None
     database.zet_instelling(con, "start_datum", "2026-11-13")

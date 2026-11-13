@@ -92,25 +92,80 @@ def haal_aandelen(
                 continue
             deel = ruw[["Open", "High", "Low", "Close", "Volume"]].copy()
 
-        deel = deel.dropna(subset=["Open", "Close"])
-        for stempel, rij in deel.iterrows():
-            datum = _naar_datumtekst(stempel)
-            if datum >= onaf_vanaf:
-                continue
-            rijen.append(
-                {
-                    "symbool": symbool,
-                    "datum": datum,
-                    "open": float(rij["Open"]),
-                    "hoog": float(rij["High"]) if pd.notna(rij.get("High")) else None,
-                    "laag": float(rij["Low"]) if pd.notna(rij.get("Low")) else None,
-                    "slot": float(rij["Close"]),
-                    "volume": float(rij["Volume"]) if pd.notna(rij.get("Volume")) else None,
-                    "valuta": VALUTA_AANDEEL,
-                    "bron": "yfinance",
-                }
-            )
+        rijen.extend(_rijen_uit(symbool, deel, onaf_vanaf))
     return rijen
+
+
+def _rijen_uit(symbool: str, deel: pd.DataFrame, onaf_vanaf: str) -> list[dict]:
+    """Van een tabel met koersen van een symbool naar rijen voor de database."""
+    rijen: list[dict] = []
+    deel = deel.dropna(subset=["Open", "Close"])
+    for stempel, rij in deel.iterrows():
+        datum = _naar_datumtekst(stempel)
+        if datum >= onaf_vanaf:
+            continue
+        rijen.append(
+            {
+                "symbool": symbool,
+                "datum": datum,
+                "open": float(rij["Open"]),
+                "hoog": float(rij["High"]) if pd.notna(rij.get("High")) else None,
+                "laag": float(rij["Low"]) if pd.notna(rij.get("Low")) else None,
+                "slot": float(rij["Close"]),
+                "volume": float(rij["Volume"]) if pd.notna(rij.get("Volume")) else None,
+                "valuta": VALUTA_AANDEEL,
+                "bron": "yfinance",
+            }
+        )
+    return rijen
+
+
+def haal_een_aandeel(symbool: str, start: str, eind: str | None = None) -> list[dict]:
+    """Haal een enkel aandeel op, los van de rest."""
+    ruw = yf.Ticker(symbool).history(start=start, end=eind, interval="1d", auto_adjust=False)
+    if ruw is None or len(ruw) == 0:
+        return []
+    return _rijen_uit(symbool, ruw, eerste_onaffe_dag_aandelen())
+
+
+# Pauzes tussen de herkansingen, in seconden. Yahoo weigert soms tijdelijk
+# verzoeken van servers die veel vragen; even wachten helpt dan meestal.
+HERKANSING_PAUZES = (10, 30, 60)
+
+
+def haal_aandelen_met_herkansing(
+    symbolen: list[str],
+    start: str,
+    eind: str | None = None,
+    pauzes: tuple[int, ...] = HERKANSING_PAUZES,
+    slaap=time.sleep,
+) -> tuple[list[dict], dict[str, str]]:
+    """Haal alle aandelen op en probeer ontbrekende nog een paar keer los.
+
+    Geeft de rijen terug en per symbool dat na alle pogingen nog ontbreekt de
+    reden, zoals Yahoo die gaf.
+    """
+    rijen = haal_aandelen(symbolen, start=start, eind=eind)
+    gevonden = {r["symbool"] for r in rijen}
+    ontbreekt = [s for s in symbolen if s not in gevonden]
+    redenen: dict[str, str] = {}
+
+    for symbool in ontbreekt:
+        reden = "geen koersen ontvangen"
+        for pauze in pauzes:
+            slaap(pauze)
+            try:
+                extra = haal_een_aandeel(symbool, start=start, eind=eind)
+            except Exception as fout:
+                reden = f"{type(fout).__name__}: {str(fout)[:150]}"
+                continue
+            if extra:
+                rijen.extend(extra)
+                print(f"  {symbool}: bij herkansing alsnog opgehaald")
+                break
+        else:
+            redenen[symbool] = reden
+    return rijen, redenen
 
 
 def _beurs(naam: str):

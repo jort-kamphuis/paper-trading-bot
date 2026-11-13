@@ -101,6 +101,39 @@ def wie_ben_ik(token: str) -> dict:
     return _roep_aan(token, "getMe")["result"]
 
 
+def lees_berichten(token: str, chat_id: str, offset: int | None) -> tuple[list[dict], int | None]:
+    """Haal nieuwe berichten op die uit jouw eigen chat komen.
+
+    Berichten uit andere chats worden genegeerd: alleen jij kunt de bot iets
+    laten doen. Geeft de berichten terug ({tekst, wanneer}) en de offset voor
+    de volgende keer. Telegram bewaart onbevestigde berichten ongeveer een dag.
+    """
+    gegevens: dict = {"timeout": 0, "allowed_updates": ["message"]}
+    if offset is not None:
+        gegevens["offset"] = offset
+    resultaat = _roep_aan(token, "getUpdates", gegevens)["result"]
+    berichten: list[dict] = []
+    volgende = offset
+    for update in resultaat:
+        volgende = max(volgende or 0, int(update["update_id"]) + 1)
+        bericht = update.get("message") or {}
+        if str((bericht.get("chat") or {}).get("id")) != str(chat_id):
+            continue
+        tekst = bericht.get("text")
+        if not tekst:
+            continue
+        from datetime import datetime, timezone
+
+        wanneer = datetime.fromtimestamp(int(bericht.get("date", 0)), timezone.utc)
+        berichten.append({"tekst": tekst, "wanneer": wanneer.strftime("%Y-%m-%d %H:%M UTC")})
+    return berichten, volgende
+
+
+def bevestig(token: str, offset: int) -> None:
+    """Laat Telegram weten dat alles tot 'offset' verwerkt is, zodat het niet terugkomt."""
+    _roep_aan(token, "getUpdates", {"offset": offset, "timeout": 0, "limit": 1})
+
+
 def recente_chats(token: str) -> list[tuple[str, str]]:
     """De chats die de bot recent een bericht hebben gestuurd: (chat_id, naam)."""
     resultaat = _roep_aan(token, "getUpdates", {"timeout": 0})["result"]

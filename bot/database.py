@@ -151,6 +151,53 @@ CREATE TABLE IF NOT EXISTS ai_besluiten (
     UNIQUE (portefeuille, symbool, datum)
 );
 
+-- Een voorgestelde verbetering die op nep-geld naast het origineel draait.
+-- status: loopt, wacht_op_akkoord, aangenomen, afgewezen
+CREATE TABLE IF NOT EXISTS challengers (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    strategie       TEXT NOT NULL,          -- welke regelstrategie
+    parameter       TEXT NOT NULL,          -- welke instelling
+    oude_waarde     REAL NOT NULL,
+    nieuwe_waarde   REAL NOT NULL,
+    onderbouwing    TEXT,
+    -- Een challenger draait als eerlijk paar: twee nieuwe portefeuilles die op
+    -- dezelfde dag met hetzelfde geld beginnen. A met de huidige instellingen,
+    -- B met de voorgestelde. Anders vergelijk je een verse portefeuille met een
+    -- die al weken vol posities zit.
+    portefeuille    TEXT NOT NULL UNIQUE,   -- B: de voorgestelde instellingen
+    portefeuille_a  TEXT NOT NULL UNIQUE,   -- A: de huidige instellingen
+    instellingen_a  TEXT NOT NULL,          -- JSON, vastgelegd bij de start
+    instellingen_b  TEXT NOT NULL,          -- JSON, vastgelegd bij de start
+    voorgesteld_op  TEXT NOT NULL,
+    gestart_op      TEXT NOT NULL,
+    status          TEXT NOT NULL,
+    beoordeeld_op   TEXT,
+    uitslag         TEXT                    -- de vergelijking, in gewone taal
+);
+
+-- Elke wijziging aan de instellingen, met wie er akkoord gaf en wanneer.
+-- Zo is in de resultaten altijd te zien vanaf welke dag een strategie anders werkte.
+CREATE TABLE IF NOT EXISTS wijzigingen (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    datum         TEXT NOT NULL,
+    strategie     TEXT NOT NULL,
+    parameter     TEXT NOT NULL,
+    oude_waarde   REAL NOT NULL,
+    nieuwe_waarde REAL NOT NULL,
+    challenger_id INTEGER,
+    akkoord       TEXT NOT NULL             -- bijvoorbeeld 'Telegram, 2026-12-14 08:12 UTC'
+);
+
+-- De weekrapporten, zoals ze verstuurd zijn.
+CREATE TABLE IF NOT EXISTS rapporten (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    datum       TEXT NOT NULL UNIQUE,       -- de dag waarover het rapport gaat
+    tekst       TEXT NOT NULL,
+    conclusies  TEXT,                       -- JSON: de drie conclusies van Claude
+    voorstel    TEXT,                       -- JSON: het voorstel, of null
+    gemaakt_op  TEXT NOT NULL
+);
+
 -- Kosten van de Claude-API, om het maandbudget te bewaken (stap 3).
 CREATE TABLE IF NOT EXISTS ai_kosten (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -281,16 +328,33 @@ def wisselkoersen_dict(con: sqlite3.Connection) -> dict[str, float]:
 
 
 def leeg_handelsdata(con: sqlite3.Connection) -> None:
-    """Wis portefeuilles, posities, trades, waardes en de voortgang.
+    """Wis alles wat bij een meting hoort: portefeuilles, trades, waardes,
+    voortgang, AI-besluiten, proeven, wijzigingen en rapporten.
 
-    Koersen en nieuws blijven staan. Gebruikt door de backtest, zodat die
-    altijd schoon begint.
+    Blijft staan: koersen, nieuws en de AI-kosten. Uitgegeven geld is
+    uitgegeven, ook als je opnieuw begint; anders klopt de budgetteller van de
+    maand niet meer met wat je werkelijk hebt betaald.
     """
     for tabel in (
-        "trades", "posities", "waarde", "portefeuilles",
-        "wachtrij", "verwerkte_dagen",
+        "trades", "posities", "waarde", "portefeuilles", "wachtrij", "verwerkte_dagen",
+        "ai_besluiten", "challengers", "wijzigingen", "rapporten",
     ):
         con.execute(f"DELETE FROM {tabel}")
+    con.commit()
+
+
+def boek_correctie(con: sqlite3.Connection, datum: str, usd: float, reden: str) -> None:
+    """Boek AI-kosten die buiten de bot om zijn gemaakt, zodat het budget klopt.
+
+    Bijvoorbeeld een proef op een kopie van de database die toch de API
+    aanriep. Zo'n boeking telt mee in wat er deze maand is uitgegeven, maar niet
+    in de prognose van wat een normale maand kost.
+    """
+    con.execute(
+        """INSERT INTO ai_kosten (datum, maand, rol, model, tokens_in, tokens_uit, kosten_usd)
+           VALUES (?, ?, 'correctie', ?, 0, 0, ?)""",
+        (datum, datum[:7], reden[:200], float(usd)),
+    )
     con.commit()
 
 

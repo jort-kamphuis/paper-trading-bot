@@ -70,6 +70,45 @@ def test_geen_dubbele_dagen():
     assert tijden == sorted(tijden)
 
 
+def _rij(symbool):
+    return {"symbool": symbool, "datum": "2026-11-12", "open": 1.0, "hoog": 1.0, "laag": 1.0,
+            "slot": 1.0, "volume": 1.0, "valuta": "USD", "bron": "yfinance"}
+
+
+def test_ontbrekend_aandeel_wordt_nog_eens_los_opgehaald(monkeypatch):
+    """Op GitHub viel ORCL een nacht weg. Een herkansing moet dat opvangen."""
+    monkeypatch.setattr(koersen, "haal_aandelen", lambda s, start, eind=None: [_rij("AAPL")])
+    pogingen = []
+
+    def los(symbool, start, eind=None):
+        pogingen.append(symbool)
+        return [] if len(pogingen) < 2 else [_rij(symbool)]  # tweede keer raak
+
+    monkeypatch.setattr(koersen, "haal_een_aandeel", los)
+    gewacht = []
+    rijen, redenen = koersen.haal_aandelen_met_herkansing(
+        ["AAPL", "ORCL"], "2026-01-01", slaap=gewacht.append
+    )
+    assert {r["symbool"] for r in rijen} == {"AAPL", "ORCL"}
+    assert redenen == {}
+    assert pogingen == ["ORCL", "ORCL"]
+    assert gewacht == list(koersen.HERKANSING_PAUZES[:2]), "tussen pogingen moet gewacht worden"
+
+
+def test_blijft_een_aandeel_weg_dan_staat_de_reden_erbij(monkeypatch):
+    monkeypatch.setattr(koersen, "haal_aandelen", lambda s, start, eind=None: [_rij("AAPL")])
+
+    def kapot(symbool, start, eind=None):
+        raise RuntimeError("Too Many Requests")
+
+    monkeypatch.setattr(koersen, "haal_een_aandeel", kapot)
+    rijen, redenen = koersen.haal_aandelen_met_herkansing(
+        ["AAPL", "ORCL"], "2026-01-01", slaap=lambda s: None
+    )
+    assert "ORCL" in redenen
+    assert "Too Many Requests" in redenen["ORCL"]
+
+
 def test_stopt_altijd_ook_als_een_beurs_raar_doet():
     """Een beurs die steeds hetzelfde teruggeeft, mag de bot niet laten hangen."""
 

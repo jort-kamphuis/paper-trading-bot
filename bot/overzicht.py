@@ -28,7 +28,8 @@ def portefeuille_standen(con: sqlite3.Connection, datum: str | None = None) -> l
                   p.start_kapitaal, p.strategie, p.gestart_op
            FROM waarde w
            JOIN portefeuilles p ON p.naam = w.portefeuille
-           WHERE w.datum = (SELECT MAX(datum) FROM waarde w2
+           WHERE p.actief = 1
+             AND w.datum = (SELECT MAX(datum) FROM waarde w2
                             WHERE w2.portefeuille = w.portefeuille AND w2.datum <= ?)
            ORDER BY w.totaal_eur DESC""",
         (datum,),

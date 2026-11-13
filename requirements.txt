@@ -1,0 +1,10 @@
+# Stap 1: data, regelstrategieën en backtest
+pandas
+numpy
+yfinance
+ccxt
+pyyaml
+python-dotenv
+requests
+feedparser
+pytest

@@ -1,0 +1,139 @@
+# Instellingen van de paper trading-bot.
+# ALLES GEBEURT MET NEP-GELD. Er zit geen koppeling met een broker in deze code.
+
+algemeen:
+  basisvaluta: EUR          # alle portefeuilles rekenen in euro's
+  start_kapitaal_eur: 1000  # per strategie een eigen portefeuille
+  max_per_trade_eur: 100    # nooit meer dan dit bedrag in een keer inleggen
+  kosten_pct: 0.1           # 0,1% kosten bij aankoop en bij verkoop
+  slippage_pct: 0.05        # 0,05% ongunstigere prijs dan de openingskoers
+
+# De regelstrategieën volgen deze lange lijst, zodat er sneller genoeg trades
+# zijn om iets te kunnen zeggen. Bron van de lijst: eigen keuze, grote en goed
+# verhandelbare namen. Het zijn geen aanbevelingen.
+watchlist:
+  aandelen:
+    # Grote Amerikaanse bedrijven (25)
+    - AAPL
+    - MSFT
+    - NVDA
+    - AMZN
+    - GOOGL
+    - META
+    - TSLA
+    - AVGO
+    - JPM
+    - V
+    - MA
+    - UNH
+    - XOM
+    - JNJ
+    - WMT
+    - PG
+    - HD
+    - COST
+    - ORCL
+    - AMD
+    - NFLX
+    - CRM
+    - BAC
+    - KO
+    - PEP
+    # Niet-Amerikaanse bedrijven, verhandeld op een Amerikaanse beurs in dollars (5)
+    - ASML   # Nasdaq-notering, zoals afgesproken
+    - SAP
+    - TSM
+    - SHOP
+    - NVO
+  etfs:
+    # Indexfondsen (10)
+    - SPY
+    - QQQ
+    - IWM
+    - DIA
+    - VTI
+    - VEA
+    - EEM
+    - XLF
+    - XLE
+    - GLD
+  crypto:
+    # 8 paren, koers in USDT (zie opmerking bij 'crypto' hieronder)
+    - BTC/USDT
+    - ETH/USDT
+    - SOL/USDT
+    - BNB/USDT
+    - XRP/USDT
+    - ADA/USDT
+    - DOGE/USDT
+    - LTC/USDT
+
+# De AI-analist blijft op deze 15 symbolen (jouw oorspronkelijke lijst),
+# omdat elke beslissing geld kost bij de Claude-API.
+ai_watchlist:
+  - AAPL
+  - MSFT
+  - NVDA
+  - AMZN
+  - GOOGL
+  - META
+  - TSLA
+  - ASML
+  - SPY
+  - QQQ
+  - BTC/USDT
+  - ETH/USDT
+  - SOL/USDT
+  - BNB/USDT
+  - XRP/USDT
+
+crypto:
+  # Beurzen worden in deze volgorde geprobeerd. Binance weigert verzoeken uit
+  # de VS en de GitHub-servers staan in de VS, dus Kraken en Coinbase staan
+  # erachter als terugval. Alleen publieke koersdata, nooit een sleutel.
+  beurzen:
+    - binance
+    - kraken
+    - coinbase
+
+wisselkoers:
+  # Dagelijkse EUR/USD-koers, om dollarkoersen naar euro's te rekenen.
+  symbool: EURUSD=X
+
+strategieen:
+  momentum:
+    actief: true
+    terugblik_dagen: 60      # koersstijging over ongeveer 3 maanden
+    aantal_posities: 8       # koop de 8 sterkste namen
+    verkoop_buiten_top: 16   # verkoop zodra een naam uit de top 16 valt
+    min_stijging_pct: 2.0    # en alleen kopen bij een stijging van minstens 2%
+  mean_reversion:
+    actief: true
+    rsi_periode: 14
+    koop_onder: 30           # RSI onder 30 = fors gedaald
+    verkoop_boven: 55        # RSI boven 55 = hersteld, winst pakken
+    max_dagen_vasthouden: 20 # anders na 20 beursdagen sluiten
+  trend:
+    actief: true
+    snelle_ma: 20            # 20-daags gemiddelde
+    langzame_ma: 100         # 100-daags gemiddelde
+  benchmarks:
+    actief: true
+    # Kopen en vasthouden: het hele startkapitaal in een keer erin.
+    # Dit is met opzet een uitzondering op max_per_trade_eur, anders meet je
+    # niet wat "de markt kopen en vasthouden" oplevert.
+    posities:
+      - SPY
+      - BTC/USDT
+
+rapport:
+  # Hoeveel trades er minstens moeten zijn voor een uitspraak, en met welke
+  # zekerheid we rekenen in de toets.
+  min_trades_voor_uitspraak: 30
+  betrouwbaarheid: 0.95
+  onderscheidend_vermogen: 0.80
+
+backtest:
+  # Alleen voor de regelstrategieën. Dit is GEEN bewijs: zie README.
+  jaren_terug: 1
+  opwarm_dagen: 150   # extra geschiedenis vooraf, nodig voor het 100-daags gemiddelde

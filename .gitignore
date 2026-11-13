@@ -1,0 +1,20 @@
+# Geheimen: nooit in git
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Tussenbestanden
+data/cache/
+*.log
+
+# Databases blijven voorlopig lokaal. De koershistorie is bijna 5 MB en zou de
+# repository elke dag met dat formaat laten groeien. In stap 4 komt er een
+# kleine database met alleen de resultaten (trades, posities, waardes) die wel
+# wordt bewaard; de koersen worden dan bij elke run opnieuw opgehaald.
+data/*.db

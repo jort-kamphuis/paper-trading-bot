@@ -127,7 +127,7 @@ def test_overzicht_scorekaarten_en_ai_vandaag(tmp_path, con, cfg, gevuld):
     assert per["ai_analist"]["soort"] == "ai"
     assert per["momentum"]["trades"] == 1 and per["momentum"]["vs_meetlat_pp"] is not None
     assert ov["ai_vandaag"] == [{"portefeuille": "ai_analist", "datum": gevuld["laatste"],
-                                 "beoordeeld": 3, "kopen": 1, "verkopen": 0}]
+                                 "beoordeeld": 3, "kopen": 1, "verkopen": 0, "gemist": 19}]
     h = ov["hoofdvraag"]
     assert h["ai"] == "ai_analist" and h["meetlat"] == "gelijk_alle"
     assert h["label"] == "nog niet te zeggen" and h["dagen_tot_einde"] == 95

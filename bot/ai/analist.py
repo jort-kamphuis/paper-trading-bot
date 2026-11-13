@@ -134,6 +134,12 @@ class AIAnalist:
         b.kosten_usd += bull.usd + bear.usd
         b.stappen["bull"] = bull.data
         b.stappen["bear"] = bear.data
+        # Mislukt een van beide, dan zou de risk manager maar een kant horen. Dan
+        # liever geen kans (en geen aankopen die nacht) dan een scheve.
+        for antwoord in (bull, bear):
+            if antwoord.probleem():
+                b.probleem = antwoord.probleem()
+                return b
 
         risk = self._vraag(
             "risk", rollen.SYSTEEM_RISK,

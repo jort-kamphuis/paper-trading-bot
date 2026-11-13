@@ -150,7 +150,11 @@ def _ai_ronde(
         aantal = mod_nieuws.vernieuw(con, symbolen)
         print(f"{aantal} nieuwskoppen opgehaald voor {len(symbolen)} symbolen.")
         aandelen = [s for s in conf.laad()["watchlist"]["aandelen"] if s in symbolen]
-        n = kwartaalcijfers.vernieuw(con, aandelen)
+        # Opgeslagen met de beslisdag als datum: dit is wat er bekend was voordat het
+        # besluit over die dag werd uitgevoerd (anders ziet de AI het pas een dag later).
+        from datetime import date as _date
+
+        n = kwartaalcijfers.vernieuw(con, aandelen, vandaag=_date.fromisoformat(datum))
         print(f"Datum van de volgende kwartaalcijfers bekend voor {n} van {len(aandelen)} aandelen.")
 
     client = maak_client(con, cfg)
@@ -176,7 +180,13 @@ def _ai_ronde(
             bericht.append(f"{naam}: {len(uitkomst.fouten)} fout(en), bijv. {uitkomst.fouten[0][:120]}")
         if uitkomst.gestopt:
             print(f"    GESTOPT: {uitkomst.gestopt}")
+            if uitkomst.tegoed_op:
+                bericht.insert(0, "LET OP: het API-tegoed is op. Zet credits bij in de Anthropic-console; "
+                                  "tot dan koopt de AI niets nieuws.")
             bericht.append(f"{naam} gestopt (geen nieuwe aankopen): {uitkomst.gestopt[:200]}")
+        elif uitkomst.onbruikbaar:
+            bericht.append(f"{naam}: {len(uitkomst.onbruikbaar)} symbolen zonder bruikbare kans, "
+                           f"dus vannacht geen aankopen ({', '.join(uitkomst.onbruikbaar[:5])})")
 
     print()
     print(budget.samenvatting())
@@ -375,9 +385,14 @@ def ronde(args) -> tuple[int, str | None]:
         sleutel = f"herinnering_{herinnering['datum']}"
         if database.lees_instelling(con, sleutel) is None:
             tekst = str(herinnering["tekst"]).strip()
-            schatting = _schatting_echte_meting(con)
-            if schatting:
-                tekst += f"\n\n{schatting}"
+            # Het bedrag voor de hele meting, uit de gemeten kosten van de proefnachten
+            # en de AI-lijst zoals die nu in config.yaml staat (de gekozen lijst).
+            from bot.ai import kostenprognose
+
+            normaal = conf.laad()
+            bedrag = kostenprognose.bedrag_hele_meting(con, normaal)
+            marge = float(herinnering.get("marge_pct", 20))
+            tekst += "\n\n" + kostenprognose.bedrag_als_tekst(bedrag, normaal, marge_pct=marge)
             args.berichten.append(tekst)
             database.zet_instelling(con, sleutel, "verstuurd")
             print(f"\nHerinnering klaargezet: {tekst[:80]}...")

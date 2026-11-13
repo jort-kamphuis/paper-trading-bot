@@ -103,6 +103,18 @@ def verslag(con: sqlite3.Connection, regels_cfg: dict | None = None) -> str:
             uit.append(f"  per maand (21 beursdagen) bij: {schatting}")
         uit.append("")
 
+    # Het bedrag voor de hele meting, om de credits in een keer te kopen.
+    from bot.ai import kostenprognose
+
+    normaal = conf.laad()
+    per_aantal = [(n, kostenprognose.bedrag_hele_meting(con, normaal, symbolen=n)) for n in AANTALLEN]
+    if per_aantal[0][1].totaal_usd is not None:
+        dagen = per_aantal[0][1].beursdagen
+        uit.append(f"Hele meting ({dagen} beursdagen, drie AI-portefeuilles en de weekrapporten samen):")
+        for n, b in per_aantal:
+            uit.append(f"  {n} symbolen: ${getal(b.totaal_usd, 2)}, met 20% marge ${getal(b.totaal_usd * 1.2, 2)}")
+        uit.append("")
+
     from bot.ai import kalibratie
 
     uit.append(kalibratie.als_tekst(con))

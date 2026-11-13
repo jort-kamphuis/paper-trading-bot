@@ -26,8 +26,8 @@ def _cfg():
     }
 
 
-BEURS = ["2026-11-11", "2026-11-12"]
-ALLES = ["2026-11-11", "2026-11-12", "2026-11-13"]
+BEURS = ["2026-11-12", "2026-11-13"]
+ALLES = ["2026-11-12", "2026-11-13", "2026-11-14"]
 
 
 def test_compleet_geeft_geen_problemen():
@@ -44,13 +44,13 @@ def test_een_heel_symbool_weg():
 def test_aandeel_mist_een_beursdag():
     markt = Markt({"AAPL": _df(BEURS), "ORCL": _df(BEURS[:1]), "SPY": _df(BEURS), "BTC/USDT": _df(ALLES)})
     problemen = volledigheid.controleer(markt, _cfg(), ALLES)
-    assert problemen == ["ORCL: geen koers op 2026-11-12, terwijl SPY die dag wel handelde"]
+    assert problemen == ["ORCL: geen koers op 2026-11-13, terwijl SPY die dag wel handelde"]
 
 
 def test_weekend_is_geen_probleem_voor_aandelen():
     """Op een dag dat SPY niet handelde, hoeft een aandeel ook geen koers te hebben."""
     markt = Markt({"AAPL": _df(BEURS), "ORCL": _df(BEURS), "SPY": _df(BEURS), "BTC/USDT": _df(ALLES)})
-    assert volledigheid.controleer(markt, _cfg(), ["2026-11-13"]) == []
+    assert volledigheid.controleer(markt, _cfg(), ["2026-11-14"]) == []
 
 
 def test_crypto_mist_een_dag():
@@ -61,4 +61,4 @@ def test_crypto_mist_een_dag():
         "BTC/USDT": _df(ALLES), "ETH/USDT": _df(ALLES[:2]),
     })
     problemen = volledigheid.controleer(markt, cfg, ALLES)
-    assert problemen == ["ETH/USDT: geen koers op 2026-11-13"]
+    assert problemen == ["ETH/USDT: geen koers op 2026-11-14"]

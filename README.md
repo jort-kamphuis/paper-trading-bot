@@ -5,9 +5,12 @@ Een bot die met **nep-geld** handelt om één vraag te beantwoorden:
 > Doet een strategie het beter dan simpelweg de markt kopen en vasthouden?
 
 Er wordt nergens met echt geld gehandeld. Er zit geen koppeling met een broker
-in deze code en die komt er ook niet in. Een test bewaakt dat
-(`tests/test_geen_echt_geld.py`): die leest alle code en valt om zodra er een
-opdracht in staat waarmee je een order zou kunnen plaatsen of geld verplaatsen.
+in deze code en die komt er ook niet in. Tests bewaken dat
+(`tests/test_geen_echt_geld.py`): de bot leest geen enkele sleutel van een beurs
+of broker (alleen die van Claude en Telegram), en de code wordt doorzocht op
+bekende opdrachten om een order te plaatsen of geld te verplaatsen. Dat zoeken
+op woorden is een vangnet, geen garantie; de echte garantie is dat er geen
+sleutel bestaat waarmee de bot ergens geld zou kunnen bewegen.
 
 **Dit is geen beleggingsadvies.** Wat hier uitkomt is een meting op nep-geld,
 geen aanbeveling om iets te kopen of te verkopen.
@@ -22,21 +25,48 @@ beantwoorden. Dit verandert tijdens de meting niet.
 
 | | |
 |---|---|
-| **Vraag** | Verslaat `ai_analist` de gelijk verdeelde kopen-en-vasthouden-meetlat van zijn eigen symbolen? (`gelijk_alle` als de AI alle symbolen volgt, anders `gelijk_ai`) |
-| **Maatstaf** | Het verschil in rendement, in dollars, inclusief dividend en na kosten en slippage |
-| **Toets** | Een blok-bootstrap op de dagelijkse verschillen, met blokken van 10 beursdagen. "Betekenisvol" is een p-waarde van 0,05 of lager |
-| **Start** | maandag 23 november 2026 (lukt dat niet, dan vrijdag 27 november) |
-| **Einde** | dinsdag 23 februari 2027 |
+| **Vraag** | Kiest `ai_analist` beter dan de gelijk verdeelde kopen-en-vasthouden-meetlat van zijn eigen symbolen (`gelijk_alle`, of `gelijk_ai` als de AI een kleinere lijst volgt), als die meetlat **elke dag even veel belegd is** als `ai_analist`? |
+| **Maatstaf** | Per beursdag: het rendement van `ai_analist` min (het belegde deel van `ai_analist` de dag ervoor × het rendement van de meetlat). In dollars, inclusief dividend en na kosten en slippage |
+| **Toets** | Eenzijdig (is `ai_analist` beter?). De dagverschillen gaan in aaneengesloten blokken van ongeveer 10 beursdagen; op de blokgemiddelden een t-toets met (aantal blokken − 1) vrijheidsgraden. "Ja" bij een hoger rendement en een p-waarde van 0,05 of lager |
+| **Start** | maandag 23 november 2026. Deze dag ligt vast in `config.yaml` (`meting.start`), ook als de eerste nacht mislukt |
+| **Einde** | dinsdag 23 februari 2027. Er wordt nooit verder gerekend; pas als de koers van die dag er is, komt er een "ja" of "nee" |
+
+Waarom zo, en niet anders (review november 2026):
+
+* **Even belegd.** `ai_analist` koopt alleen bij een duidelijke kans en zet 10% per
+  positie in, dus hij heeft vaak geld in kas. `gelijk_alle` zit altijd helemaal in
+  de markt. Zonder correctie meet je vooral hoeveel kas de AI aanhoudt: in een
+  stijgende markt verliest hij dan, ook met goede keuzes. Een portefeuille die
+  half in kas zit en verder precies de markt volgt, kwam in een test over
+  2023-2026 in een derde van de perioden van drie maanden uit als "betekenisvol
+  slechter". De ruwe vergelijking met `gelijk_alle` staat er wel bij, als tweede
+  cijfer, maar is niet de hoofdvraag.
+* **De toets.** De eerste opzet (een blok-bootstrap) zei bij 61 beursdagen zonder
+  enig echt verschil in ongeveer 9% van de gevallen "betekenisvol", in plaats van
+  5%. De toets op blokgemiddelden komt in een simulatie op ongeveer 5% uit, ook
+  als goede en slechte dagen elkaar opvolgen. `tests/test_statistiek_toets.py`
+  controleert dat bij elke ronde opnieuw.
+* **Wat de meting kan zien.** Over 3 maanden is dit weinig: een voordeel moet groot
+  zijn om "ja" te halen. Een "nee" betekent dus vooral: er was geen voordeel te
+  zien dat groot genoeg is om te tellen, niet dat er bewezen geen is. Op 23
+  februari staat daarom ook het verschil zelf in het verslag, niet alleen ja of nee.
 
 Alles daarnaast is **verkennend**: de regelstrategieën, de meetlatten SPY en BTC,
 het Haiku-controlepotje, `ai_enkel`, de weekrapporten. Interessant om te zien,
 maar daar trek je geen harde conclusie uit. Een weekrapport is een tussenstand.
 
 **Ook verkennend, maar vooraf vastgelegd: klopten de kansen?** Elke kans van de
-AI wordt na 14 kalenderdagen gescoord tegen wat er echt gebeurde, met de
-Brier-score (lager is beter; altijd 0,5 zeggen geeft 0,25) en een tabel per
-kansvak (onder 0,45, 0,45 tot 0,55, 0,55 of meer: hoe vaak kwam het uit?). Dat
-gebeurt **apart voor twee soorten vraag**, want het zijn verschillende vragen:
+AI wordt na 14 kalenderdagen gescoord tegen wat er echt gebeurde: vanaf de
+openingskoers van de dag na de beslisdag (dan zou de bot kopen) tot de slotkoers
+14 dagen later, met dividend, en na 0,3% kosten. Vanaf het slot rekenen zou nieuws
+van na het slot, dat de AI om 00:30 UTC al ziet, laten meetellen als voorspelling.
+De maat is de Brier-score (lager is beter), naast twee vergelijkingen: altijd 0,5
+zeggen (0,25) en altijd de basiskans zeggen (hoe vaak het in het algemeen
+uitkwam). Pas onder die tweede lat weet de AI iets. Daarbij een tabel per kansvak
+van 0,05 (hoe vaak kwam het uit?). Kansen op opeenvolgende dagen gaan over
+overlappende periodes, dus er zijn minder onafhankelijke waarnemingen dan het
+aantal kansen doet lijken. Dit gebeurt **apart voor twee soorten vraag**, want het
+zijn verschillende vragen:
 
 * **relatief**, voor alle symbolen behalve SPY en BTC: doet het symbool het beter
   dan zijn referentie (SPY voor aandelen en ETF's, BTC voor crypto), na kosten?
@@ -50,6 +80,10 @@ De twee soorten worden nooit samengevoegd tot één score.
 **Eerlijke verwachting:** drie maanden is kort. De kans is groot dat het verschil
 aan het eind niet te onderscheiden is van toeval. Dat is dan ook een uitkomst:
 het betekent dat er geen voordeel te zien was dat groot genoeg is om te tellen.
+
+**Tussenstanden zijn verkennend.** Weekrapporten en het dashboard tonen onderweg
+p-waarden met het woord "verkennend", nooit "betekenisvol". Wie elke week kijkt en
+bij het eerste lage getal conclusies trekt, maakt de toets waardeloos.
 
 ---
 
@@ -225,8 +259,13 @@ niets telt mee.
   Claude niets voorstelt), woensdag 18 november een extra rapport waarin de
   proef wordt beoordeeld. Dan krijg je `/akkoord` of `/afwijzen` te zien. Een
   akkoord wordt helemaal verwerkt en gemarkeerd als proefweek.
-* **18 november:** een herinnering in Telegram om ongeveer $40 aan credits bij te
-  zetten, met automatisch opwaarderen uit en de limiet in de console op $40.
+* **18 november:** een herinnering in Telegram om de credits voor de hele meting
+  in één keer te kopen, met automatisch opwaarderen uit. De bot rekent het bedrag
+  zelf uit: de gemeten kosten per symbool per dag van de proefnachten, maal de
+  gekozen AI-lijst, maal de 62 beursdagen van de meting, plus de weekrapporten,
+  met het totaal en het totaal met 20% marge. Het proefweekverslag laat hetzelfde
+  zien voor 15, 30 en 46 symbolen. Is het tegoed tijdens de meting toch op, dan
+  meldt de bot dat apart in Telegram.
 
 Bekijken:
 
@@ -292,7 +331,9 @@ verbetering komt er daarom altijd als nieuwe portefeuille bij.
 3. **Een eerlijk paar.** Twee nieuwe portefeuilles van $1.000, op dezelfde dag:
    `..._A1` met de huidige instellingen, `..._B1` met de voorgestelde. Verder
    zijn ze gelijk.
-4. **Na 4 weken** vergelijkt de bot A en B over dezelfde dagen. Alleen als B
+4. **Na 8 weken** (ongeveer 40 beursdagen) vergelijkt de bot A en B over dezelfde
+   dagen, met dezelfde toets als de hoofdvraag. Zijn er nog te weinig beursdagen
+   voor die toets (bijvoorbeeld door feestdagen), dan loopt de proef door. Alleen als B
    **betekenisvol** beter is (hoger rendement en een p-waarde van 0,05 of lager,
    met dezelfde blok-bootstrap), krijg je de vraag:
 
@@ -313,7 +354,7 @@ of
    krijgt een bevestiging. Zonder antwoord verandert er niets en loopt de proef
    door.
 
-**Eerlijk over die 4 weken:** dat is statistisch weinig. Daarom de backtest
+**Eerlijk over die 8 weken:** dat is statistisch nog steeds weinig. Daarom de backtest
 vooraf en de eis van een betekenisvol verschil.
 
 Hooguit één proef tegelijk. De bot reageert alleen op berichten uit jouw eigen
@@ -547,8 +588,10 @@ er is geen nieuwsgeschiedenis. Daarom:
 
 ### Kosten
 
-Het budget staat in `config.yaml` op **$35 per maand**; in de Anthropic-console
-staat de limiet op $40 als noodrem, met automatisch opwaarderen uit.
+Het budget staat in `config.yaml` op **$35 per maand**. De credits worden in één
+keer gekocht voor de hele meting, met automatisch opwaarderen uit: het tegoed
+zelf is de noodrem. Het bedrag komt uit de gemeten kosten van de proefnachten
+(zie de proefweek). Is het tegoed op, dan meldt de bot dat in Telegram.
 
 * **Nooit twee keer betalen.** Een beoordeling die al bestaat, wordt niet opnieuw
   gevraagd. Draait het script twee keer op een dag, dan kost de tweede keer niets.
@@ -587,15 +630,16 @@ dingen: controleren of de motor goed rekent, zien hoeveel trades een strategie
 ongeveer maakt, en de slechtste voorstellen van de challenger tegenhouden.
 **De echte test begint op de startdag van de meting.**
 
-### "Betekenisvol" of nog gewoon geluk
+### "Betekenisvol" of nog gewoon geluk (verkennend)
 
 Twee manieren, allebei met een "bootstrap" (10.000 keer opnieuw trekken uit wat
 er gebeurd is):
 
 * **Per strategie:** het resultaat in dollars van elke afgeronde trade. Blijft
   het gemiddelde bijna altijd positief, dan is het waarschijnlijk geen toeval.
-* **Tegenover een meetlat:** de dagelijkse verschillen in rendement, getrokken
-  in **blokken van 10 beursdagen**. Goede dagen komen vaak achter elkaar; wie
+* **Tegenover een meetlat:** de dagelijkse verschillen in rendement, in
+  **blokken van ongeveer 10 beursdagen**, met een t-toets op de blokgemiddelden
+  (zie de hoofdvraag). Goede dagen komen vaak achter elkaar; wie
   losse dagen trekt, lijkt zekerder dan hij is.
 
 Daarnaast rekent de bot uit **hoeveel trades er nog nodig zijn** voor een harde
@@ -605,11 +649,17 @@ ontmoedigd, maar wees er ook niet blind voor.
 
 ### De meetlatten
 
-SPY en BTC zetten alles in één symbool. De strategieën verdelen hun geld en
-hebben soms kas over. In een stijgende markt is dat een nadeel dat niets met de
-kwaliteit van hun regels te maken heeft. Daarom is er ook `gelijk_alle` (en
-`gelijk_ai`): kopen en vasthouden over dezelfde symbolen waaruit de strategie
-kiest. Wint een strategie daar niet van, dan voegde het kiezen niets toe.
+SPY en BTC zetten alles in één symbool. `gelijk_alle` (en `gelijk_ai`) koopt en
+houdt vast over dezelfde symbolen waaruit de strategieën en de AI kiezen: wint een
+strategie daar niet van, dan voegde het kiezen niets toe.
+
+Maar `gelijk_alle` zit altijd helemaal in de markt, en de strategieën en de AI
+niet: zij hebben vaak geld in kas. In een stijgende markt is dat een nadeel dat
+niets met hun keuzes te maken heeft, in een dalende markt een voordeel. Daarom
+staat elke portefeuille ook tegenover `gelijk_alle` **even belegd**: elke dag
+evenveel in de markt als die portefeuille de dag ervoor. Dat verschil meet het
+kiezen; de ruwe vergelijking meet het kiezen plus hoeveel kas er stond. De
+hoofdvraag gebruikt de even belegde vergelijking.
 
 ### Vereenvoudigingen in de nep-broker
 
@@ -694,7 +744,7 @@ paper-trading-bot/
 │   ├── zet_github_secrets.py  sleutels uit .env naar GitHub Secrets
 │   ├── slank_maken.py       database klein maken voor git (door GitHub)
 │   └── meld_fout.py         foutmelding naar Telegram (door GitHub)
-└── tests/                   268 tests
+└── tests/                   308 tests
 ```
 
 ### Wanneer begint de meting

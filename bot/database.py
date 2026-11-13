@@ -245,7 +245,9 @@ CREATE TABLE IF NOT EXISTS ai_kosten (
     model         TEXT NOT NULL,
     tokens_in     INTEGER NOT NULL,
     tokens_uit    INTEGER NOT NULL,
-    kosten_usd    REAL NOT NULL
+    kosten_usd    REAL NOT NULL,
+    model_antwoord TEXT,                  -- het model dat de API terugmeldde
+    verzoek_id    TEXT                    -- het nummer van het verzoek bij de API
 );
 
 CREATE INDEX IF NOT EXISTS idx_koersen_datum ON koersen (datum);
@@ -275,6 +277,7 @@ LATERE_KOLOMMEN: dict[str, dict[str, str]] = {
     "wachtrij": {"gewicht": "REAL"},
     "koersen": {"dividend": "REAL", "splitsing": "REAL"},
     "posities": {"koopprijs": "REAL", "dividend_usd": "REAL", "koopreden": "TEXT", "bevestigd_op": "TEXT"},
+    "ai_kosten": {"model_antwoord": "TEXT", "verzoek_id": "TEXT"},
     "ai_besluiten": {
         "kans": "REAL", "verwacht_pct": "REAL", "referentie": "TEXT", "horizon_dagen": "INTEGER",
         "vraag": "TEXT", "uitkomst_pct": "REAL", "geraakt": "INTEGER", "gescoord_op": "TEXT",

@@ -62,7 +62,7 @@ jobs:
           cache: pip
 
       - name: Pakketten installeren
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt -c constraints.txt
 
       - name: Tests
         run: python -m pytest tests -q
@@ -86,7 +86,7 @@ jobs:
       # database gewoon bewaard; het dashboard blijft dan een nacht oud.
       - name: Dashboard bouwen
         id: dashboard
-        if: ${{ always() && (steps.ronde.outcome == 'success' || steps.ronde.outcome == 'failure') }}
+        if: ${{ always() && steps.ronde.outcome != 'skipped' }}
         continue-on-error: true
         run: python scripts/exporteer_dashboard.py --uit _site
 
@@ -97,12 +97,12 @@ jobs:
         with:
           path: _site
 
-      # Ook na een mislukte ronde: de AI-kosten en -beslissingen zijn per symbool
+      # Ook na een mislukte of afgebroken ronde: de AI-kosten en -beslissingen zijn per symbool
       # vastgelegd. Gooi je die weg, dan betaalt de bot morgen opnieuw voor
       # hetzelfde. Elke dag gaat in een keer of niet, dus de database is nooit
       # half bijgewerkt.
       - name: Database bewaren
-        if: ${{ always() && (steps.ronde.outcome == 'success' || steps.ronde.outcome == 'failure') }}
+        if: ${{ always() && steps.ronde.outcome != 'skipped' }}
         run: |
           python scripts/slank_maken.py
           git config user.name "github-actions[bot]"
@@ -121,8 +121,16 @@ jobs:
           else
             git commit -m "Dagelijkse ronde $(date -u +%Y-%m-%d)"
           fi
-          git pull --rebase origin main
-          git push origin HEAD:main
+          # Drie pogingen: bij een gelijktijdige commit (of een hapering van GitHub)
+          # opnieuw ophalen en opnieuw pushen. Anders is de nacht, met de betaalde
+          # AI-kosten, verloren.
+          gelukt=nee
+          for poging in 1 2 3; do
+            if git pull --rebase origin main && git push origin HEAD:main; then gelukt=ja; break; fi
+            echo "Pushen mislukt (poging $poging); over 15 seconden opnieuw."
+            sleep 15
+          done
+          test "$gelukt" = ja
 
       # Alleen als iets anders dan de ronde zelf misging (de ronde stuurt bij
       # een fout zelf al een bericht).

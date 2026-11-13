@@ -42,7 +42,8 @@ MIN_PER_VAK = 10
 MEETLAT_P = 0.05
 
 HOOFDVRAAG = (
-    "Verslaat {ai} de gelijk verdeelde kopen-en-vasthouden-meetlat van zijn eigen symbolen ({meetlat})?"
+    "Kiest {ai} beter dan de gelijk verdeelde meetlat van zijn eigen symbolen ({meetlat}), "
+    "als die meetlat elke dag even veel belegd is als {ai}?"
 )
 
 
@@ -106,14 +107,15 @@ def eigen_meetlat(naam: str, ai: set[str], bestaand: set[str]) -> str | None:
     return "gelijk_alle" if "gelijk_alle" in bestaand else None
 
 
-def hoofdvraag_label(vandaag: date, einde: date, verschil_pp: float | None, p: float | None) -> str:
+def hoofdvraag_label(laatste_data: date, einde: date, verschil_pp: float | None, p: float | None) -> str:
     """Het eerlijke label bij de hoofdvraag.
 
-    Tot de einddatum altijd 'nog niet te zeggen', ook als de p-waarde onderweg
-    laag is: wie elke dag kijkt en bij het eerste mooie getal stopt, maakt de toets
-    waardeloos. Vanaf de einddatum: 'ja' of 'nee'.
+    Tot de koers van de einddatum in de data zit altijd 'nog niet te zeggen', ook
+    als de p-waarde onderweg laag is: wie elke dag kijkt en bij het eerste mooie
+    getal stopt, maakt de toets waardeloos. Daarna 'ja' of 'nee', gerekend tot en
+    met de einddatum en niet verder.
     """
-    if vandaag < einde:
+    if laatste_data < einde:
         return "nog niet te zeggen"
     if verschil_pp is not None and p is not None and verschil_pp > 0 and p <= MEETLAT_P:
         return "ja"
@@ -169,21 +171,31 @@ def _overzicht(con: sqlite3.Connection, cfg: dict, weergave: str, vandaag: date)
     ai_pf = m.get("proef_ai_portefeuille" if weergave == "proef" else "ai_portefeuille", "ai_analist")
     meetlat = eigen_meetlat(ai_pf, ai, bestaand) or "gelijk_alle"
     einde = date.fromisoformat(str(m.get("einde", "2027-02-23")))
-    v = rapport.vergelijk(con, ai_pf, meetlat, tot, kal) if ai_pf in bestaand and meetlat in bestaand else None
-    per = {p["naam"]: p for p in uit["portefeuilles"]}
+    # Nooit verder rekenen dan de einddatum: na 23 februari mag de uitslag niet meer
+    # verschuiven (anders kies je achteraf een mooie dag).
+    tot_vraag = min(tot, einde.isoformat())
+    beide = ai_pf in bestaand and meetlat in bestaand
+    v = rapport.vergelijk_even_belegd(con, ai_pf, meetlat, tot_vraag, kal) if beide else None
+    ruw = rapport.vergelijk(con, ai_pf, meetlat, tot_vraag, kal) if beide else None
+    k_ai = rapport.kerncijfers(con, cfg, ai_pf, tot_vraag, kal) if ai_pf in bestaand else None
+    k_m = rapport.kerncijfers(con, cfg, meetlat, tot_vraag, kal) if meetlat in bestaand else None
     uit["hoofdvraag"] = {
         "vraag": HOOFDVRAAG.format(ai=ai_pf, meetlat=meetlat),
         "ai": ai_pf,
         "meetlat": meetlat,
-        "ai_rendement_pct": per.get(ai_pf, {}).get("rendement_pct"),
-        "meetlat_rendement_pct": per.get(meetlat, {}).get("rendement_pct"),
+        "tot": tot_vraag,
+        "ai_rendement_pct": _getal(k_ai.rendement_pct, 2) if k_ai else None,
+        "meetlat_rendement_pct": _getal(k_m.rendement_pct, 2) if k_m else None,
+        "ai_belegd_pct": _getal(k_ai.belegd_pct, 1) if k_ai else None,
         "verschil_pp": _getal(v.verschil_pp, 2) if v else None,
         "p_waarde": _getal(v.p_waarde, 3) if v else None,
+        "ruw_verschil_pp": _getal(ruw.verschil_pp, 2) if ruw else None,
+        "ruw_p_waarde": _getal(ruw.p_waarde, 3) if ruw else None,
         "start": str(m.get("start", "")),
         "einde": einde.isoformat(),
         "dagen_tot_einde": max(0, (einde - vandaag).days),
         "label": "telt niet mee" if weergave == "proef" else hoofdvraag_label(
-            vandaag, einde, v.verschil_pp if v else None, v.p_waarde if v else None),
+            date.fromisoformat(tot), einde, v.verschil_pp if v else None, v.p_waarde if v else None),
     }
 
     # ---- AI vandaag ----
@@ -198,8 +210,24 @@ def _overzicht(con: sqlite3.Connection, cfg: dict, weergave: str, vandaag: date)
             (GEEN_KOERS, laatste),
         ):
             uit["ai_vandaag"].append({"portefeuille": r["portefeuille"], "datum": laatste,
-                                      "beoordeeld": r["beoordeeld"], "kopen": r["kopen"], "verkopen": r["verkopen"]})
+                                      "beoordeeld": r["beoordeeld"], "kopen": r["kopen"], "verkopen": r["verkopen"],
+                                      "gemist": _gemiste_ai_dagen(con, r["portefeuille"], start, tot, kal)})
     return uit
+
+
+def _gemiste_ai_dagen(con: sqlite3.Connection, pf: str, start: str | None, tot: str, kal: list[str]) -> int:
+    """Beursdagen sinds de start waarop deze AI-portefeuille niets beoordeelde.
+
+    Na een gemiste nacht haalt de bot de regelstrategieën in, maar de AI alleen de
+    nieuwste dag (het nieuws van toen is weg). Dat wordt hier geteld.
+    """
+    if not start:
+        return 0
+    gedaan = {r["datum"] for r in con.execute("SELECT DISTINCT datum FROM ai_besluiten WHERE portefeuille = ?", (pf,))}
+    eerste = min(gedaan) if gedaan else None
+    if eerste is None:
+        return 0
+    return sum(1 for d in kal if max(start, eerste) <= d <= tot and d not in gedaan)
 
 
 def _vraag_van(rij: sqlite3.Row) -> str:
@@ -244,6 +272,8 @@ def _kansen(con: sqlite3.Connection, cfg: dict) -> dict:
             "brier": _getal(sum((k - x) ** 2 for k, x in paren) / len(paren), 4) if paren else None,
             "gem_kans": _getal(sum(k for k, _ in paren) / len(paren), 3) if paren else None,
             "kwam_uit_pct": _getal(100.0 * sum(x for _, x in paren) / len(paren), 1) if paren else None,
+            # Wie altijd de basiskans zegt (hoe vaak het uitkwam), scoort f * (1 - f).
+            "brier_basiskans": _getal((lambda f: f * (1 - f))(sum(x for _, x in paren) / len(paren)), 4) if paren else None,
             "vakken": vakken, "eerste_score": eerste,
         })
     return {"brier_geen_idee": kalibratie.BRIER_GEEN_IDEE, "horizon_dagen": horizon,
@@ -321,8 +351,12 @@ def _kosten(con: sqlite3.Connection, cfg: dict, vandaag: date) -> dict:
                FROM ai_kosten GROUP BY maand, rol, model ORDER BY maand DESC, usd DESC"""
         )
     ]
+    afwijkend = con.execute(
+        "SELECT COUNT(*) n FROM ai_kosten WHERE model_antwoord IS NOT NULL AND model_antwoord != model"
+    ).fetchone()["n"]
     return {
         "maand": budget.maand, "budget_usd": _getal(budget.max_usd, 2),
+        "ander_model": afwijkend,
         "uitgegeven_usd": _getal(budget.uitgegeven(), 4),
         "per_dag": per_dag, "per_rol": per_rol,
     }

@@ -8,8 +8,12 @@ kalenderdagen) weten we wat er gebeurde. Dan vult dit bestand in:
   zelf;
 * geraakt: 1 als dat meer was dan de kosten van kopen en verkopen samen, anders 0.
 
-Gerekend op slotkoersen: van de beslisdag tot de laatste slotkoers op of voor
-de beslisdag plus de horizon.
+Gerekend zoals de bot echt zou handelen: vanaf de openingskoers van de eerste
+handelsdag na de beslisdag (dan wordt een order uitgevoerd) tot de laatste
+slotkoers op of voor de beslisdag plus de horizon, met het dividend van die
+periode erbij. Vanaf het slot rekenen zou nieuws van na het slot (dat de AI om
+00:30 UTC al ziet) laten meetellen als voorspelling, terwijl de koers bij de
+opening al gesprongen is (review november 2026).
 
 De Brier-score is het gemiddelde van (kans - uitkomst)^2. Lager is beter. Wie
 altijd 0,5 zegt, scoort precies 0,25: een AI die zijn geld waard is, zit daar
@@ -44,12 +48,21 @@ def kosten_heen_en_terug_pct(cfg: dict) -> float:
     return 2.0 * (float(a["kosten_pct"]) + float(a["slippage_pct"]))
 
 
-def _rendement(markt: Markt, symbool: str, van: str, tot: str) -> float | None:
-    begin = markt.slot_op_of_voor(symbool, van)
-    eind = markt.slot_op_of_voor(symbool, tot)
-    if not begin or eind is None:
+def _rendement(markt: Markt, symbool: str, beslisdag: str, tot: str) -> float | None:
+    """Van de opening na de beslisdag tot het slot op of voor 'tot', met dividend."""
+    eerste = markt.volgende_bar_na(symbool, beslisdag)
+    if eerste is None or not eerste.open or eerste.datum > tot:
         return None
-    return 100.0 * (eind / begin - 1.0)
+    eind = markt.slot_op_of_voor(symbool, tot)
+    if eind is None:
+        return None
+    df = markt.tot_en_met(symbool, tot)
+    dividend = 0.0
+    if "dividend" in df.columns:
+        # Wie op de opening van de ex-datum koopt, krijgt dat dividend niet.
+        deel = df.loc[(df.index > eerste.datum) & (df.index <= tot), "dividend"]
+        dividend = float(deel.fillna(0.0).sum())
+    return 100.0 * ((eind + dividend) / eerste.open - 1.0)
 
 
 def uitkomst(markt: Markt, symbool: str, referentie: str, datum: str, horizon: int) -> float | None:
@@ -100,6 +113,9 @@ class Score:
     gemiddelde_kans: float
     kwam_uit_pct: float
     vakken: list[tuple[str, int, float, float]]  # naam, aantal, gemiddelde kans, kwam uit (%)
+    # Wie altijd de basiskans zegt (hoe vaak het uitkwam), scoort dit. Een AI die
+    # iets weet, zit daar onder; onder 0,25 zitten zegt alleen dat hij de basiskans kent.
+    brier_basiskans: float = BRIER_GEEN_IDEE
 
 
 def scores(con: sqlite3.Connection) -> list[Score]:
@@ -128,6 +144,7 @@ def scores(con: sqlite3.Connection) -> list[Score]:
             gemiddelde_kans=sum(k for k, _ in paren) / n,
             kwam_uit_pct=100.0 * sum(g for _, g in paren) / n,
             vakken=vakken,
+            brier_basiskans=(lambda f: f * (1.0 - f))(sum(g for _, g in paren) / n),
         ))
     return uit
 
@@ -145,7 +162,8 @@ def als_tekst(con: sqlite3.Connection) -> str:
         )
         return "\n".join(regels)
     regels.append(
-        f"  Brier-score: lager is beter; altijd 0,5 zeggen geeft {getal(BRIER_GEEN_IDEE, 3)}."
+        f"  Brier-score: lager is beter; altijd 0,5 zeggen geeft {getal(BRIER_GEEN_IDEE, 3)}, "
+        f"altijd de basiskans zeggen staat erachter."
     )
     huidig = None
     for s in lijst:
@@ -153,7 +171,8 @@ def als_tekst(con: sqlite3.Connection) -> str:
             regels.append(f"  {s.portefeuille}")
             huidig = s.portefeuille
         regels.append(
-            f"    {NAAM.get(s.vraag, s.vraag)}: {s.n} kansen, Brier {getal(s.brier, 3)}, "
+            f"    {NAAM.get(s.vraag, s.vraag)}: {s.n} kansen, Brier {getal(s.brier, 3)} "
+            f"(basiskans {getal(s.brier_basiskans, 3)}), "
             f"gemiddelde kans {getal(s.gemiddelde_kans, 2)}, kwam uit in {getal(s.kwam_uit_pct, 0)}%"
         )
         for naam, n, kans, uit in s.vakken:

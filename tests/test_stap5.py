@@ -180,7 +180,7 @@ def test_proef_wordt_niet_te_vroeg_beoordeeld(con, cfg):
 
 def test_betere_challenger_vraagt_om_akkoord(con, cfg, config_kopie):
     c = _start_proef(con, cfg)
-    dagen = _dagen("2026-12-01", 30)
+    dagen = _dagen("2026-12-01", 60)
     for i, d in enumerate(dagen):
         _waarde(con, c["portefeuille_a"], d, 1000 + i)
         _waarde(con, c["portefeuille"], d, 1000 + 2 * i)
@@ -199,14 +199,20 @@ def test_betere_challenger_vraagt_om_akkoord(con, cfg, config_kopie):
 def test_iets_beter_maar_niet_betekenisvol_stopt(con, cfg):
     """B eindigt hoger, maar het verschil is ruis: dan geen vraag om akkoord."""
     c = _start_proef(con, cfg)
-    dagen = _dagen("2026-12-01", 30)
+    dagen = _dagen("2026-12-01", 60)
+    import numpy as np
+
+    rng = np.random.default_rng(0)  # met dit zaad eindigt B hoger, maar met veel ruis
     a, b = 1000.0, 1000.0
     for i, d in enumerate(dagen):
         _waarde(con, c["portefeuille_a"], d, a)
         _waarde(con, c["portefeuille"], d, b)
         a *= 1.001
-        b *= 1.0015 * (1.03 if i % 2 == 0 else 1 / 1.03)
+        b *= 1.0012 * (1 + rng.normal(0, 0.02))
     con.commit()
+    eind = {r["portefeuille"]: r["totaal_usd"] for r in con.execute(
+        "SELECT portefeuille, totaal_usd FROM waarde WHERE datum = ?", (dagen[-1],))}
+    assert eind[c["portefeuille"]] > eind[c["portefeuille_a"]], "B moet hoger eindigen voor deze test"
     uitslagen = challenger.beoordeel(con, cfg, dagen[-1], dagen)
     assert len(uitslagen) == 1 and not uitslagen[0].beter
     assert con.execute("SELECT status FROM challengers").fetchone()["status"] == "afgewezen"
@@ -214,7 +220,7 @@ def test_iets_beter_maar_niet_betekenisvol_stopt(con, cfg):
 
 def test_slechtere_challenger_stopt_vanzelf(con, cfg):
     c = _start_proef(con, cfg)
-    dagen = _dagen("2026-12-01", 30)
+    dagen = _dagen("2026-12-01", 60)
     for i, d in enumerate(dagen):
         _waarde(con, c["portefeuille_a"], d, 1000 + 2 * i)
         _waarde(con, c["portefeuille"], d, 1000 + i)

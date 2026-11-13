@@ -291,7 +291,85 @@ def vergelijk_reeksen(
     a = np.asarray(rendementen_strategie, dtype=float)
     b = np.asarray(rendementen_benchmark, dtype=float)
     n = min(a.size, b.size)
-    if n < 20:
-        return None
     verschil = a[:n] - b[:n]
-    return blok_bootstrap_p_waarde(list(verschil), blok=blok, trekkingen=trekkingen, zaad=zaad)
+    return blokgemiddelden_p_waarde(list(verschil), blok=blok)
+
+
+# ------------------------------------------------- de toets van de hoofdvraag
+#
+# Waarom niet de blok-bootstrap hierboven? Bij een meting van 61 beursdagen zijn er
+# maar 6 blokken van 10 dagen. Dan schat de bootstrap de spreiding te klein: in een
+# simulatie zonder enig echt verschil gaf hij in ongeveer 9% van de gevallen
+# p <= 0,05, waar dat 5% hoort te zijn (review november 2026).
+#
+# Deze toets is eenvoudig en eerlijk bij korte reeksen: verdeel de dagverschillen
+# in k aaneengesloten blokken van ongeveer 'blok' dagen, neem per blok het
+# gemiddelde, en doe een eenzijdige t-toets op die k gemiddelden met k - 1
+# vrijheidsgraden. Samenhang tussen dagen blijft binnen een blok, dus de blokken
+# zijn bij benadering onafhankelijk. tests/test_statistiek_toets.py controleert
+# met een simulatie dat hij bij geen verschil hooguit ongeveer 5% "betekenisvol" zegt.
+
+MIN_BLOKKEN = 3
+
+
+def _betacf(a: float, b: float, x: float) -> float:
+    """Kettingbreuk voor de onvolledige betafunctie (methode van Lentz)."""
+    klein = 1e-300
+    qab, qap, qam = a + b, a + 1.0, a - 1.0
+    c, d = 1.0, 1.0 - qab * x / qap
+    d = 1.0 / (d if abs(d) > klein else klein)
+    h = d
+    for m in range(1, 300):
+        m2 = 2 * m
+        aa = m * (b - m) * x / ((qam + m2) * (a + m2))
+        d = 1.0 + aa * d
+        d = 1.0 / (d if abs(d) > klein else klein)
+        c = 1.0 + aa / c
+        c = c if abs(c) > klein else klein
+        h *= d * c
+        aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))
+        d = 1.0 + aa * d
+        d = 1.0 / (d if abs(d) > klein else klein)
+        c = 1.0 + aa / c
+        c = c if abs(c) > klein else klein
+        delta = d * c
+        h *= delta
+        if abs(delta - 1.0) < 1e-14:
+            break
+    return h
+
+
+def _betainc(a: float, b: float, x: float) -> float:
+    """De geregulariseerde onvolledige betafunctie I_x(a, b)."""
+    if x <= 0.0:
+        return 0.0
+    if x >= 1.0:
+        return 1.0
+    ln = math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b) + a * math.log(x) + b * math.log(1.0 - x)
+    voor = math.exp(ln)
+    if x < (a + 1.0) / (a + b + 2.0):
+        return voor * _betacf(a, b, x) / a
+    return 1.0 - voor * _betacf(b, a, 1.0 - x) / b
+
+
+def t_overschrijdingskans(t: float, df: float) -> float:
+    """P(T >= t) voor een t-verdeling met df vrijheidsgraden (eenzijdig)."""
+    staart = 0.5 * _betainc(df / 2.0, 0.5, df / (df + t * t))
+    return staart if t >= 0 else 1.0 - staart
+
+
+def blokgemiddelden_p_waarde(waarnemingen: list[float], blok: int = 10) -> float | None:
+    """Eenzijdige p-waarde dat het gemiddelde boven nul ligt, op blokgemiddelden.
+
+    None als er minder dan MIN_BLOKKEN blokken zijn (te weinig om iets te zeggen).
+    """
+    arr = np.asarray(waarnemingen, dtype=float)
+    k = arr.size // blok
+    if k < MIN_BLOKKEN:
+        return None
+    gemiddelden = np.array([deel.mean() for deel in np.array_split(arr, k)])
+    sd = float(gemiddelden.std(ddof=1))
+    if sd == 0.0:
+        return 0.0 if gemiddelden.mean() > 0 else 1.0
+    t = float(gemiddelden.mean()) / (sd / math.sqrt(k))
+    return t_overschrijdingskans(t, k - 1)

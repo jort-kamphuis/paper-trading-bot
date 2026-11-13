@@ -10,7 +10,7 @@ Regel van de meting: een lopende portefeuille wordt nooit aangepast. Daarom:
    beter, dan start het niet.
 3. Dan een eerlijk A/B-paar: twee nieuwe portefeuilles op dezelfde dag met
    hetzelfde geld. A met de huidige instellingen, B met de voorgestelde.
-4. Na 4 weken: alleen bij een betekenisvol verschil (B beter en p-waarde 0,05
+4. Na 8 weken: alleen bij een betekenisvol verschil (B beter en p-waarde 0,05
    of lager, met een blok-bootstrap) volgt een vraag om akkoord. Anders stopt
    de proef.
 5. Na /akkoord gaat B verder als NIEUWE, vaste portefeuille. Het origineel en
@@ -213,6 +213,10 @@ def beoordeel(con: sqlite3.Connection, cfg: dict, tot: str, kalender: list[str])
         if cijfers is None:
             continue
         ra, rb, p = cijfers
+        if p is None and not altijd_vragen:
+            # Nog te weinig beursdagen voor een eerlijke toets (zie
+            # statistiek.blokgemiddelden_p_waarde): de proef loopt door.
+            continue
         betekenisvol = rb > ra and p is not None and p <= grens
         p_tekst = "te weinig dagen om te toetsen" if p is None else f"p-waarde {getal(p, 2)}"
         tekst = (

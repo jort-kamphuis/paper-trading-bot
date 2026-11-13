@@ -37,6 +37,18 @@ def _tijd(waarde) -> datetime | None:
     return stempel if stempel.tzinfo else stempel.replace(tzinfo=timezone.utc)
 
 
+def yahoo_symbool(symbool: str) -> str:
+    """Hoe Yahoo een symbool kent. Crypto heet daar BTC-USD, niet BTC/USDT.
+
+    Dit ging mis: met BTC/USDT kreeg de AI nooit cryptonieuws (0 koppen in de
+    proefweek). Het nieuws wordt wel onder ons eigen symbool opgeslagen.
+    """
+    if "/" in symbool:
+        basis = symbool.split("/")[0]
+        return f"{basis}-USD"
+    return symbool
+
+
 def haal_koppen(symbool: str, max_aantal: int = 10) -> list[dict]:
     """Haal de nieuwste koppen op voor een symbool.
 
@@ -45,7 +57,7 @@ def haal_koppen(symbool: str, max_aantal: int = 10) -> list[dict]:
     """
     nu = datetime.now(timezone.utc)
     try:
-        ruw = yf.Ticker(symbool).news or []
+        ruw = yf.Ticker(yahoo_symbool(symbool)).news or []
     except Exception as fout:
         print(f"  nieuws {symbool}: niet gelukt ({type(fout).__name__}: {str(fout)[:80]})")
         return []

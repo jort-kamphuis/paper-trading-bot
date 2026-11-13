@@ -24,7 +24,7 @@ from datetime import date, timedelta
 from bot import database
 from bot.markt import Markt
 from bot.portefeuille import Portefeuille, nieuwe_portefeuille
-from bot.strategieen.basis import Order, Strategie
+from bot.strategieen.basis import DagContext, Order, Strategie
 
 # Een order die na zoveel kalenderdagen nog niet is uitgevoerd, vervalt.
 # Zonder deze grens zou een order uit het verre verleden ineens kunnen afgaan.
@@ -52,9 +52,14 @@ class Motor:
         self.con = con
         self.cfg = cfg
         self.markt = markt
+        # Alleen nog voor de weergave in euro's; gerekend wordt in dollars.
         self.wisselkoers = wisselkoers
         self.deelnemers: list[Deelnemer] = []
         self.overgeslagen_dagen = 0
+        # Dingen die niet klopten en gemeld moeten worden (bijvoorbeeld een
+        # splitsing die niet te plaatsen was).
+        self.problemen: list[str] = []
+        self.kalender_symbool = (cfg.get("rapport") or {}).get("kalender_symbool", "SPY")
 
     # ---------- opzetten ----------
 
@@ -75,6 +80,8 @@ class Motor:
             )
             pf.bewaar(self.con)
             self.con.commit()
+        # De meetlatten hebben geen grens op het aantal posities; de rest wel.
+        pf.max_posities = getattr(strategie, "max_posities", pf.max_posities)
         deelnemer = Deelnemer(strategie=strategie, portefeuille=pf, symbolen=list(symbolen))
         deelnemer.wachtrij = self._lees_wachtrij(naam)
         self.deelnemers.append(deelnemer)
@@ -93,6 +100,7 @@ class Motor:
                     actie=r["actie"],
                     reden=r["reden"] or "",
                     zekerheid=r["zekerheid"],
+                    gewicht=r["gewicht"],
                 ),
                 besluit_datum=r["besluit_datum"],
             )
@@ -101,8 +109,8 @@ class Motor:
 
     def _zet_in_wachtrij(self, portefeuille: str, wachtend: WachtendeOrder) -> None:
         self.con.execute(
-            """INSERT INTO wachtrij (portefeuille, symbool, actie, reden, zekerheid, besluit_datum)
-               VALUES (?,?,?,?,?,?)
+            """INSERT INTO wachtrij (portefeuille, symbool, actie, reden, zekerheid, besluit_datum, gewicht)
+               VALUES (?,?,?,?,?,?,?)
                ON CONFLICT(portefeuille, symbool, actie, besluit_datum) DO NOTHING""",
             (
                 portefeuille,
@@ -111,6 +119,7 @@ class Motor:
                 wachtend.order.reden,
                 wachtend.order.zekerheid,
                 wachtend.besluit_datum,
+                wachtend.order.gewicht,
             ),
         )
 
@@ -136,7 +145,7 @@ class Motor:
         Alles van deze dag gaat in een keer de database in. Gaat er iets mis,
         dan is er niets half gedaan.
         """
-        koersen_eur = self.markt.slotkoersen_eur(datum, self.wisselkoers)
+        koersen_usd = self.markt.slotkoersen_usd(datum)
 
         try:
             for deelnemer in self.deelnemers:
@@ -150,8 +159,12 @@ class Motor:
                 if database.dag_is_verwerkt(self.con, naam, datum):
                     self.overgeslagen_dagen += 1
                     continue
+                # Eerst dividend en splitsingen, dan pas de orders: wie op de
+                # ochtend van de ex-datum verkoopt, had het aandeel ervoor nog,
+                # en een verkoop na een splitsing gaat over het nieuwe aantal.
+                self._verwerk_uitkeringen(deelnemer, datum)
                 self._voer_wachtrij_uit(deelnemer, datum, stil=stil)
-                deelnemer.portefeuille.bewaar_waarde(self.con, datum, koersen_eur)
+                deelnemer.portefeuille.bewaar_waarde(self.con, datum, koersen_usd)
                 self._beslis(deelnemer, datum)
                 database.markeer_dag_verwerkt(self.con, naam, datum)
             self.con.commit()
@@ -176,10 +189,46 @@ class Motor:
                 deelnemer.portefeuille.nieuwe_trades.clear()
             deelnemer.wachtrij = self._lees_wachtrij(naam)
 
+    def _verwerk_uitkeringen(self, deelnemer: Deelnemer, datum: str) -> None:
+        """Dividend in de kas, en na een splitsing het aantal stukken bijwerken.
+
+        Een splitsing is lastig, omdat Yahoo oude koersen achteraf aanpast.
+        Wie voor de splitsing kocht, kocht tegen de oude (onaangepaste) prijs
+        en heeft dus het oude aantal stukken: dat moet met de factor omhoog.
+        Maar in een backtest is alle geschiedenis al aangepast, en is het aantal
+        stukken al goed. Het verschil zie je aan de koopprijs: is die ongeveer
+        de factor hoger dan de aangepaste openingskoers van die dag, dan is er
+        tegen de oude prijs gekocht. Is het geen van beide, dan klopt er iets
+        niet en melden we het.
+        """
+        pf = deelnemer.portefeuille
+        for symbool, positie in list(pf.posities.items()):
+            bar = self.markt.bar(symbool, datum)
+            if bar is None:
+                continue
+            if bar.splitsing and bar.splitsing > 0 and bar.splitsing != 1 and positie.gekocht_op < datum:
+                factor = bar.splitsing
+                dan = self.markt.bar(symbool, positie.gekocht_op)
+                if not positie.koopprijs or dan is None or dan.open <= 0:
+                    pf.pas_splitsing_toe(symbool, factor, datum)
+                else:
+                    verhouding = positie.koopprijs / dan.open
+                    if abs(verhouding / factor - 1.0) < 0.25:
+                        pf.pas_splitsing_toe(symbool, factor, datum)
+                    elif abs(verhouding - 1.0) < 0.25:
+                        pass  # al tegen de aangepaste prijs gekocht (backtest)
+                    else:
+                        self.problemen.append(
+                            f"{pf.naam} {symbool}: splitsing {factor:g} op {datum}, maar de "
+                            f"koopprijs past bij geen van beide; niet verwerkt"
+                        )
+            if bar.dividend and bar.dividend > 0 and positie.gekocht_op < datum:
+                pf.ontvang_dividend(symbool, bar.dividend, datum)
+
     def _voer_wachtrij_uit(self, deelnemer: Deelnemer, datum: str, stil: bool) -> None:
         """Voer de orders uit die vandaag aan de beurt zijn."""
         pf = deelnemer.portefeuille
-        eurusd = self.wisselkoers.op(datum)
+        eurusd = self.wisselkoers.op(datum) if self.wisselkoers is not None else 0.0
         overblijvend: list[WachtendeOrder] = []
 
         # Verkopen eerst, zodat het geld weer beschikbaar is om te kopen.
@@ -206,9 +255,13 @@ class Motor:
                 continue
 
             if order.actie == "KOOP":
-                bedrag = pf.kas_eur if deelnemer.strategie.volledig_kapitaal else None
-                if bedrag is not None:
-                    bedrag = bedrag / (1.0 + pf.kosten_pct / 100.0)
+                # Elke aankoop krijgt een vast deel van de waarde van de
+                # portefeuille, gewaardeerd tegen de koersen van de beslisdag
+                # (die waren bekend). Standaard 10%; de meetlatten geven zelf
+                # een gewicht mee (alles in een keer, of gelijk verdeeld).
+                gewicht = order.gewicht if order.gewicht is not None else pf.positie_pct / 100.0
+                waarde = pf.totale_waarde(self.markt.slotkoersen_usd(wachtend.besluit_datum))
+                bedrag = gewicht * waarde
                 pf.koop(
                     symbool=order.symbool,
                     datum=datum,
@@ -218,7 +271,7 @@ class Motor:
                     eurusd=eurusd,
                     reden=order.reden,
                     zekerheid=order.zekerheid,
-                    bedrag_eur=bedrag,
+                    bedrag_usd=bedrag,
                 )
             else:
                 pf.verkoop(
@@ -245,9 +298,35 @@ class Motor:
         )
         return date.fromisoformat(datum) > grens
 
+    def is_beursdag(self, datum: str) -> bool:
+        """Was de Amerikaanse beurs open? Zonder SPY in de data (tests) telt elke dag."""
+        if not self.markt.heeft(self.kalender_symbool):
+            return True
+        return self.markt.is_handelsdag(self.kalender_symbool, datum)
+
     def _beslis(self, deelnemer: Deelnemer, datum: str) -> None:
-        """Laat de strategie beslissen op basis van de data tot en met vandaag."""
-        orders = deelnemer.strategie.besluit(
+        """Laat de strategie beslissen op basis van de data tot en met vandaag.
+
+        Alleen op beursdagen. In het weekend handelt alleen crypto; wie dan een
+        ranglijst maakt en plekken vult, geeft crypto een voorsprong die niets
+        met de strategie te maken heeft. Orders gaan wel gewoon af op de
+        eerstvolgende koers, voor crypto dus ook in het weekend.
+        """
+        strategie = deelnemer.strategie
+        beursdag = self.is_beursdag(datum)
+        if getattr(strategie, "alleen_beursdagen", True) and not beursdag:
+            return
+        pf = deelnemer.portefeuille
+        strategie.dag = DagContext(
+            datum=datum,
+            is_beursdag=beursdag,
+            wachtende_kopen={w.order.symbool for w in deelnemer.wachtrij if w.order.actie == "KOOP"},
+            wachtende_verkopen={w.order.symbool for w in deelnemer.wachtrij if w.order.actie == "VERKOOP"},
+            kas_usd=pf.kas_usd,
+            waarde_usd=pf.totale_waarde(self.markt.slotkoersen_usd(datum)),
+            max_posities=pf.max_posities,
+        )
+        orders = strategie.besluit(
             datum=datum,
             markt=self.markt,
             symbolen=deelnemer.symbolen,

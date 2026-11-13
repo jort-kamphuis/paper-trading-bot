@@ -2,20 +2,40 @@
 
 Dit staat apart zodat de backtest, de dagelijkse ronde en het overzicht
 gegarandeerd met dezelfde opstelling werken.
+
+De portefeuilles van de echte meting:
+* momentum, mean_reversion, trend: de regels op alle symbolen;
+* momentum_ai, mean_reversion_ai, trend_ai: dezelfde regels op de AI-lijst
+  (alleen als de AI niet alle symbolen volgt);
+* benchmark_spy, benchmark_btc: alles in een keer in SPY of BTC;
+* gelijk_alle (en gelijk_ai): gelijk verdeeld kopen en vasthouden;
+* ai_analist, ai_controle_haiku, ai_enkel: de AI;
+* challengers: lopende proeven en aangenomen verbeteringen.
 """
 
 from __future__ import annotations
 
+import copy
 import sqlite3
 
 from bot import config as conf
 from bot.markt import Markt
 from bot.motor import Motor
-from bot.strategieen import maak_strategieen
-from bot.strategieen.benchmarks import KoopEnHoud
+from bot.strategieen import MeanReversion, Momentum, TrendVolgend, maak_strategieen
+from bot.strategieen.benchmarks import GelijkVerdeeld, KoopEnHoud
 
 # Onder deze sleutel onthoudt de bot wanneer de echte meting begon.
 SLEUTEL_START = "start_datum"
+
+SOORTEN = {"momentum": Momentum, "mean_reversion": MeanReversion, "trend": TrendVolgend}
+
+
+def ai_symbolen(cfg: dict, markt: Markt) -> list[str]:
+    return [s for s in cfg.get("ai_watchlist", []) if markt.heeft(s)]
+
+
+def ai_volgt_alles(cfg: dict) -> bool:
+    return set(cfg.get("ai_watchlist", [])) >= set(conf.alle_symbolen(cfg))
 
 
 def bouw_motor(
@@ -41,44 +61,58 @@ def bouw_motor(
     ontbreekt = [s for s in symbolen if not markt.heeft(s)]
     if ontbreekt and not stil:
         print(f"Geen koersen voor: {ontbreekt}")
+    ai_lijst = ai_symbolen(cfg, markt)
+    deellijst = bool(ai_lijst) and not ai_volgt_alles(cfg)
 
+    # ---- de regels ----
     for strategie in maak_strategieen(cfg):
         motor.voeg_toe(strategie, aanwezig, gestart_op=begin)
+    if deellijst and cfg["strategieen"].get("ook_op_ai_lijst"):
+        for strategie in maak_strategieen(cfg):
+            strategie.soort = strategie.naam
+            strategie.naam = f"{strategie.naam}_ai"
+            motor.voeg_toe(strategie, ai_lijst, gestart_op=begin)
 
-    if cfg["strategieen"]["benchmarks"]["actief"]:
-        for symbool in cfg["strategieen"]["benchmarks"]["posities"]:
+    # ---- de meetlatten ----
+    meetlat = cfg["strategieen"]["benchmarks"]
+    if meetlat["actief"]:
+        for symbool in meetlat["posities"]:
             if markt.heeft(symbool):
                 motor.voeg_toe(KoopEnHoud(symbool), [symbool], gestart_op=begin)
             elif not stil:
                 print(f"Meetlat {symbool} overgeslagen: geen koersen")
+        if meetlat.get("gelijk_verdeeld"):
+            motor.voeg_toe(GelijkVerdeeld("gelijk_alle", aanwezig), aanwezig, gestart_op=begin)
+            if deellijst:
+                motor.voeg_toe(GelijkVerdeeld("gelijk_ai", ai_lijst), ai_lijst, gestart_op=begin)
 
+    # ---- de AI ----
     if met_ai:
         from bot.ai.ronde import ai_portefeuilles
         from bot.strategieen.ai_analist import AIStrategie
 
-        ai_symbolen = [s for s in cfg.get("ai_watchlist", []) if markt.heeft(s)]
-        for naam, model in ai_portefeuilles(cfg):
-            motor.voeg_toe(AIStrategie(naam, model_override=model), ai_symbolen, gestart_op=begin)
+        for p in ai_portefeuilles(cfg):
+            motor.voeg_toe(
+                AIStrategie(p["naam"], model_override=p.get("model"), soort=p.get("soort", "debat")),
+                ai_lijst,
+                gestart_op=begin,
+            )
 
+    # ---- challengers ----
     if met_challengers:
-        # Elke lopende proef draait als paar: A (huidig) en B (voorstel), met de
-        # instellingen zoals die bij de start van de proef zijn vastgelegd.
+        # Een lopende proef draait als paar: A (huidig) en B (voorstel), met de
+        # instellingen zoals die bij de start zijn vastgelegd. Een aangenomen
+        # verbetering draait door als eigen portefeuille.
         from bot.challenger import strategieen_voor
-        from bot.strategieen import MeanReversion, Momentum, TrendVolgend
 
-        soorten = {"momentum": Momentum, "mean_reversion": MeanReversion, "trend": TrendVolgend}
         for strategie, portefeuille, instellingen, gestart_op in strategieen_voor(con):
-            soort = soorten.get(strategie)
+            soort = SOORTEN.get(strategie)
             if soort is None:
                 continue
-            exemplaar = soort(instellingen)
+            exemplaar = soort(copy.deepcopy(instellingen))
             exemplaar.naam = portefeuille
             exemplaar.soort = strategie
             exemplaar.variant = "challenger"
             motor.voeg_toe(exemplaar, aanwezig, gestart_op=gestart_op)
 
     return motor
-
-
-def ai_symbolen(cfg: dict, markt: Markt) -> list[str]:
-    return [s for s in cfg.get("ai_watchlist", []) if markt.heeft(s)]

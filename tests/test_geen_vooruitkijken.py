@@ -113,7 +113,7 @@ def test_order_wordt_op_de_volgende_dag_uitgevoerd(con, cfg_min, vaste_wisselkoe
     # De prijs is de openingskoers van dag 4 plus slippage.
     verwacht_lokaal = 200.0 * (1 + 0.05 / 100)
     assert trade["prijs_lokaal"] == pytest.approx(verwacht_lokaal)
-    assert trade["prijs_eur"] == pytest.approx(verwacht_lokaal / 1.10)
+    assert trade["prijs_usd"] == pytest.approx(verwacht_lokaal), "alles in dollars"
 
 
 def test_strategie_ziet_alleen_dagen_tot_en_met_vandaag(con, cfg_min, vaste_wisselkoers):

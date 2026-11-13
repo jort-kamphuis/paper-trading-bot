@@ -5,7 +5,7 @@ als je het zelf start (scripts/omschakelen.py, dat de workflow op GitHub
 start). Wat er gebeurt:
 
 1. De echte database (trading.db) begint een nieuwe meting: alle portefeuilles
-   beginnen op dezelfde dag met 1.000 euro. De AI-kosten blijven staan.
+   beginnen op dezelfde dag met 1.000 dollar. De AI-kosten blijven staan.
 2. De correctie uit config.proefweek.yaml wordt geboekt.
 3. De proefweekdatabase wordt als afgesloten gemarkeerd, en blijft bewaard.
 4. Vanaf dat moment gelden weer alleen de instellingen uit config.yaml.
@@ -50,7 +50,7 @@ def voer_uit(
 
     regels = [
         "De proefweek is voorbij. De echte meting begint nu, met de instellingen uit "
-        "config.yaml. Alle portefeuilles beginnen op dezelfde dag met 1.000 euro."
+        "config.yaml. Alle portefeuilles beginnen op dezelfde dag met 1.000 dollar."
     ]
     omschakelen = ((overlay or {}).get("proefweek") or {}).get("omschakelen") or {}
     correctie = float(omschakelen.get("correctie_usd") or 0)

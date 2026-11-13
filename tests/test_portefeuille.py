@@ -1,10 +1,10 @@
-"""Rekent na of de nep-broker klopt: kosten, slippage, grenzen en kas."""
+"""Rekent na of de nep-broker klopt: dollars, kosten, slippage, verdeling, dividend en splitsingen."""
 
 from __future__ import annotations
 
 import pytest
 
-from bot.portefeuille import nieuwe_portefeuille
+from bot.portefeuille import Portefeuille, nieuwe_portefeuille
 from tests.conftest import INSTELLINGEN
 
 
@@ -14,96 +14,89 @@ def pf():
 
 def test_koop_rekent_kosten_en_slippage_mee():
     p = pf()
-    trade = p.koop(
-        symbool="AAA", datum="2025-01-02", besluit_datum="2025-01-01",
-        open_koers=100.0, valuta="USD", eurusd=1.10,
-    )
+    trade = p.koop("AAA", "2025-01-02", "2025-01-01", 100.0, "USD", 1.10, bedrag_usd=100.0)
     assert trade is not None
-
-    # 0,05% slippage op de openingskoers.
-    verwachte_koers = 100.0 * 1.0005
-    assert trade.prijs_lokaal == pytest.approx(verwachte_koers)
-    # In euro's: gedeeld door de wisselkoers.
-    assert trade.prijs_eur == pytest.approx(verwachte_koers / 1.10)
-
-    # Er mag maximaal 100 euro in, en de kosten komen er bovenop.
-    assert trade.bedrag_eur <= 100.0 + 1e-9
-    assert trade.kosten_eur == pytest.approx(trade.bedrag_eur * 0.001)
-    # Kas: 1000 min inleg min kosten.
-    assert p.kas_eur == pytest.approx(1000.0 - trade.bedrag_eur - trade.kosten_eur)
-    # Het aantal stukken klopt met het bedrag.
-    assert trade.aantal == pytest.approx(trade.bedrag_eur / trade.prijs_eur)
+    assert trade.prijs_lokaal == pytest.approx(100.0 * 1.0005)
+    assert trade.prijs_usd == pytest.approx(100.0 * 1.0005), "in dollars wordt er niets omgerekend"
+    assert trade.bedrag_usd == pytest.approx(100.0)
+    assert trade.kosten_usd == pytest.approx(0.10)
+    assert p.kas_usd == pytest.approx(1000.0 - 100.0 - 0.10)
+    assert trade.aantal == pytest.approx(100.0 / (100.0 * 1.0005))
+    assert trade.eurusd == pytest.approx(1.10), "de wisselkoers wordt alleen bewaard voor de weergave"
 
 
-def test_nooit_meer_dan_max_per_trade():
+def test_alleen_dollars():
+    with pytest.raises(ValueError):
+        pf().koop("AAA", "2025-01-02", "2025-01-01", 100.0, "EUR", 1.10, bedrag_usd=100.0)
+
+
+def test_zonder_bedrag_tien_procent():
     p = pf()
-    for i in range(12):
-        p.koop(
-            symbool=f"S{i}", datum="2025-01-02", besluit_datum="2025-01-01",
-            open_koers=100.0, valuta="USD", eurusd=1.10,
-        )
-    # Met 1000 euro en 100 euro per trade passen er maximaal 10 posities in,
-    # en door de kosten zelfs dat laatste stukje niet helemaal.
-    assert len(p.posities) <= 10
-    assert p.kas_eur >= -1e-9, "de kas mag nooit negatief worden"
+    trade = p.koop("AAA", "2025-01-02", "2025-01-01", 50.0, "USD", 1.10)
+    assert trade.bedrag_usd == pytest.approx(100.0), "10% van 1.000 dollar"
 
 
-def test_kas_wordt_nooit_negatief_bij_veel_kopen():
+def test_hooguit_tien_posities():
     p = pf()
-    for i in range(50):
-        p.koop(
-            symbool=f"S{i}", datum="2025-01-02", besluit_datum="2025-01-01",
-            open_koers=10.0, valuta="USD", eurusd=1.10,
-        )
-        assert p.kas_eur >= -1e-9
+    for i in range(15):
+        p.koop(f"S{i}", "2025-01-02", "2025-01-01", 10.0, "USD", 1.10, bedrag_usd=50.0)
+    assert len(p.posities) == 10
+    assert p.kas_usd >= 0
 
 
-def test_hele_kas_inleggen_laat_geen_rekenruis_achter():
-    """De meetlat legt alles in een keer in; de kas moet dan netjes nul zijn."""
+def test_meetlat_heeft_geen_grens_op_posities():
     p = pf()
-    bedrag = p.kas_eur / (1.0 + 0.1 / 100.0)
-    p.koop(
-        symbool="SPY", datum="2025-01-02", besluit_datum="2025-01-01",
-        open_koers=600.0, valuta="USD", eurusd=1.10, bedrag_eur=bedrag,
-    )
-    assert p.kas_eur == 0.0
-    assert f"{p.kas_eur:.2f}" == "0.00", "er staat '-0.00' op het scherm"
+    p.max_posities = None
+    for i in range(46):
+        p.koop(f"S{i}", "2025-01-02", "2025-01-01", 10.0, "USD", 1.10, bedrag_usd=1000.0 / 46)
+    assert len(p.posities) == 46
+
+
+def test_kas_wordt_nooit_negatief():
+    p = pf()
+    trade = p.koop("AAA", "2025-01-02", "2025-01-01", 10.0, "USD", 1.10, bedrag_usd=5000.0)
+    assert trade.bedrag_usd + trade.kosten_usd <= 1000.0 + 1e-9
+    assert p.kas_usd == 0.0
+    assert f"{p.kas_usd:.2f}" == "0.00", "geen -0,00 door rekenruis"
 
 
 def test_verkoop_berekent_het_resultaat_na_kosten():
     p = pf()
-    p.koop(
-        symbool="AAA", datum="2025-01-02", besluit_datum="2025-01-01",
-        open_koers=100.0, valuta="USD", eurusd=1.10,
-    )
-    kostprijs = p.posities["AAA"].kostprijs_eur
-    aantal = p.posities["AAA"].aantal
-
-    # Koers verdubbelt.
-    trade = p.verkoop(
-        symbool="AAA", datum="2025-02-01", besluit_datum="2025-01-31",
-        open_koers=200.0, valuta="USD", eurusd=1.10,
-    )
-    assert trade is not None
-    verwachte_koers = 200.0 * (1 - 0.0005)
-    assert trade.prijs_lokaal == pytest.approx(verwachte_koers)
-
-    opbrengst = aantal * (verwachte_koers / 1.10)
-    kosten = opbrengst * 0.001
-    assert trade.kosten_eur == pytest.approx(kosten)
-    assert trade.resultaat_eur == pytest.approx(opbrengst - kosten - kostprijs)
+    p.koop("AAA", "2025-01-02", "2025-01-01", 100.0, "USD", 1.10, bedrag_usd=100.0)
+    kostprijs, aantal = p.posities["AAA"].kostprijs_usd, p.posities["AAA"].aantal
+    trade = p.verkoop("AAA", "2025-02-01", "2025-01-31", 200.0, "USD", 1.10)
+    opbrengst = aantal * 200.0 * (1 - 0.0005)
+    assert trade.kosten_usd == pytest.approx(opbrengst * 0.001)
+    assert trade.resultaat_usd == pytest.approx(opbrengst * 0.999 - kostprijs)
+    assert 95.0 < trade.resultaat_pct < 100.0
     assert "AAA" not in p.posities
 
-    # Een verdubbeling min twee keer kosten en twee keer slippage ligt net onder 100%.
-    assert 95.0 < trade.resultaat_pct < 100.0
 
-
-def test_verlies_wordt_als_verlies_geboekt():
+def test_dividend_gaat_naar_de_kas_en_telt_mee_in_het_resultaat():
     p = pf()
-    p.koop("AAA", "2025-01-02", "2025-01-01", 100.0, "USD", 1.10)
-    trade = p.verkoop("AAA", "2025-02-01", "2025-01-31", 50.0, "USD", 1.10)
-    assert trade.resultaat_eur < 0
-    assert trade.resultaat_pct < -45
+    p.koop("AAA", "2025-01-02", "2025-01-01", 100.0, "USD", 1.10, bedrag_usd=100.0)
+    aantal = p.posities["AAA"].aantal
+    kas = p.kas_usd
+    bedrag = p.ontvang_dividend("AAA", 2.0, "2025-01-15")
+    assert bedrag == pytest.approx(aantal * 2.0)
+    assert p.kas_usd == pytest.approx(kas + aantal * 2.0)
+    trade = p.verkoop("AAA", "2025-02-01", "2025-01-31", 100.0, "USD", 1.10)
+    zonder = aantal * 100.0 * 0.9995 * 0.999 - p.nieuwe_trades[0].kosten_usd * 0  # alleen ter vergelijking
+    assert trade.resultaat_usd == pytest.approx(
+        aantal * 100.0 * 0.9995 * 0.999 + aantal * 2.0 - (100.0 + 0.10)
+    )
+    assert trade.resultaat_usd > zonder - (100.0 + 0.10)
+
+
+def test_splitsing_meer_stukken_zelfde_waarde():
+    p = pf()
+    p.koop("AAA", "2025-01-02", "2025-01-01", 1000.0, "USD", 1.10, bedrag_usd=100.0)
+    voor = p.posities["AAA"].aantal
+    waarde_voor = p.posities_waarde({"AAA": 1000.0})
+    p.pas_splitsing_toe("AAA", 10.0, "2025-01-10")
+    assert p.posities["AAA"].aantal == pytest.approx(voor * 10)
+    assert p.posities_waarde({"AAA": 100.0}) == pytest.approx(waarde_voor)
+    assert p.posities["AAA"].koopprijs == pytest.approx(1000.0 * 1.0005 / 10)
 
 
 def test_niet_twee_keer_hetzelfde_symbool_kopen():
@@ -113,42 +106,19 @@ def test_niet_twee_keer_hetzelfde_symbool_kopen():
 
 
 def test_verkoop_zonder_positie_doet_niets():
-    p = pf()
-    assert p.verkoop("AAA", "2025-01-02", "2025-01-01", 100.0, "USD", 1.10) is None
-
-
-def test_wisselkoers_wordt_echt_gebruikt():
-    """Een zwakkere euro maakt een dollarpositie in euro's meer waard."""
-    p = pf()
-    p.koop("AAA", "2025-01-02", "2025-01-01", 100.0, "USD", 1.20)
-    aantal_bij_120 = p.posities["AAA"].aantal
-
-    q = pf()
-    q.koop("AAA", "2025-01-02", "2025-01-01", 100.0, "USD", 1.05)
-    aantal_bij_105 = q.posities["AAA"].aantal
-
-    # Bij 1,20 dollar per euro koop je voor 100 euro meer stukken dan bij 1,05.
-    assert aantal_bij_120 > aantal_bij_105
-
-
-def test_waarde_is_kas_plus_posities():
-    p = pf()
-    p.koop("AAA", "2025-01-02", "2025-01-01", 100.0, "USD", 1.10)
-    aantal = p.posities["AAA"].aantal
-    prijzen = {"AAA": 50.0}
-    assert p.posities_waarde(prijzen) == pytest.approx(aantal * 50.0)
-    assert p.totale_waarde(prijzen) == pytest.approx(p.kas_eur + aantal * 50.0)
+    assert pf().verkoop("AAA", "2025-01-02", "2025-01-01", 100.0, "USD", 1.10) is None
 
 
 def test_opslaan_en_weer_inlezen(con):
     p = pf()
-    p.koop("AAA", "2025-01-02", "2025-01-01", 100.0, "USD", 1.10)
+    p.koop("AAA", "2025-01-02", "2025-01-01", 100.0, "USD", 1.10, reden="test")
+    p.ontvang_dividend("AAA", 1.0, "2025-01-10")
     p.bewaar(con)
-
-    from bot.portefeuille import Portefeuille
-
     terug = Portefeuille.uit_database(con, "test", INSTELLINGEN)
-    assert terug is not None
-    assert terug.kas_eur == pytest.approx(p.kas_eur)
-    assert "AAA" in terug.posities
-    assert terug.posities["AAA"].aantal == pytest.approx(p.posities["AAA"].aantal)
+    assert terug.kas_usd == pytest.approx(p.kas_usd)
+    pos = terug.posities["AAA"]
+    assert pos.aantal == pytest.approx(p.posities["AAA"].aantal)
+    assert pos.koopprijs == pytest.approx(100.0 * 1.0005)
+    assert pos.dividend_usd == pytest.approx(p.posities["AAA"].dividend_usd)
+    assert pos.koopreden == "test"
+    assert con.execute("SELECT COUNT(*) n FROM uitkeringen").fetchone()["n"] == 1

@@ -12,18 +12,21 @@ from pathlib import Path
 from bot.config import DB_PAD
 
 SCHEMA = """
--- Dagkoersen, in de eigen valuta van het symbool (aandelen en ETF's in USD,
--- crypto in USDT). Omrekenen naar euro's gebeurt bij het handelen.
+-- Dagkoersen in dollars (aandelen en ETF's in USD, crypto in USDT, wat we als
+-- dollar behandelen). Yahoo past oude koersen achteraf aan na een splitsing;
+-- dividend zit niet in de koers. Daarom staan ze er apart bij.
 CREATE TABLE IF NOT EXISTS koersen (
-    symbool TEXT NOT NULL,
-    datum   TEXT NOT NULL,
-    open    REAL NOT NULL,
-    hoog    REAL,
-    laag    REAL,
-    slot    REAL NOT NULL,
-    volume  REAL,
-    valuta  TEXT NOT NULL,
-    bron    TEXT NOT NULL,
+    symbool   TEXT NOT NULL,
+    datum     TEXT NOT NULL,
+    open      REAL NOT NULL,
+    hoog      REAL,
+    laag      REAL,
+    slot      REAL NOT NULL,
+    volume    REAL,
+    valuta    TEXT NOT NULL,
+    bron      TEXT NOT NULL,
+    dividend  REAL,           -- dividend per stuk met deze dag als ex-datum
+    splitsing REAL,           -- factor van een splitsing op deze dag (10 = 1 wordt 10)
     PRIMARY KEY (symbool, datum)
 );
 
@@ -39,7 +42,7 @@ CREATE TABLE IF NOT EXISTS portefeuilles (
     strategie       TEXT NOT NULL,
     variant         TEXT NOT NULL DEFAULT 'standaard',
     start_kapitaal  REAL NOT NULL,
-    kas_eur         REAL NOT NULL,
+    kas_usd         REAL NOT NULL,
     gestart_op      TEXT,
     actief          INTEGER NOT NULL DEFAULT 1
 );
@@ -49,9 +52,32 @@ CREATE TABLE IF NOT EXISTS posities (
     portefeuille     TEXT NOT NULL,
     symbool          TEXT NOT NULL,
     aantal           REAL NOT NULL,
-    kostprijs_eur    REAL NOT NULL,  -- totaal ingelegd, inclusief kosten
+    kostprijs_usd    REAL NOT NULL,  -- totaal ingelegd, inclusief kosten
     gekocht_op       TEXT NOT NULL,
+    koopprijs        REAL,           -- uitgevoerde prijs per stuk
+    dividend_usd     REAL,           -- ontvangen dividend sinds de aankoop
+    koopreden        TEXT,
+    bevestigd_op     TEXT,           -- AI: laatste herbevestiging (houdtijd)
     PRIMARY KEY (portefeuille, symbool)
+);
+
+-- Dividend en splitsingen zoals ze op posities zijn verwerkt.
+CREATE TABLE IF NOT EXISTS uitkeringen (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    portefeuille TEXT NOT NULL,
+    symbool      TEXT NOT NULL,
+    datum        TEXT NOT NULL,
+    soort        TEXT NOT NULL,      -- dividend of splitsing
+    waarde       REAL NOT NULL,      -- per stuk, of de factor
+    bedrag_usd   REAL NOT NULL
+);
+
+-- Datums van kwartaalcijfers, zoals ze op een dag bekend waren.
+CREATE TABLE IF NOT EXISTS kwartaalcijfers (
+    symbool      TEXT NOT NULL,
+    opgehaald_op TEXT NOT NULL,      -- JJJJ-MM-DD
+    datum        TEXT NOT NULL,      -- de verwachte datum van de cijfers
+    PRIMARY KEY (symbool, opgehaald_op)
 );
 
 -- Het logboek van elke trade.
@@ -66,13 +92,13 @@ CREATE TABLE IF NOT EXISTS trades (
     prijs_lokaal   REAL NOT NULL,          -- openingskoers inclusief slippage
     valuta         TEXT NOT NULL,
     eurusd         REAL NOT NULL,
-    prijs_eur      REAL NOT NULL,
+    prijs_usd      REAL NOT NULL,
     aantal         REAL NOT NULL,
-    bedrag_eur     REAL NOT NULL,          -- aantal x prijs_eur
-    kosten_eur     REAL NOT NULL,
+    bedrag_usd     REAL NOT NULL,          -- aantal x prijs_usd
+    kosten_usd     REAL NOT NULL,
     reden          TEXT,
     zekerheid      REAL,                   -- 0..1, alleen de AI-analist vult dit
-    resultaat_eur  REAL,                   -- alleen bij VERKOOP
+    resultaat_usd  REAL,                   -- alleen bij VERKOOP
     resultaat_pct  REAL                    -- alleen bij VERKOOP
 );
 
@@ -80,9 +106,9 @@ CREATE TABLE IF NOT EXISTS trades (
 CREATE TABLE IF NOT EXISTS waarde (
     portefeuille TEXT NOT NULL,
     datum        TEXT NOT NULL,
-    kas_eur      REAL NOT NULL,
-    posities_eur REAL NOT NULL,
-    totaal_eur   REAL NOT NULL,
+    kas_usd      REAL NOT NULL,
+    posities_usd REAL NOT NULL,
+    totaal_usd   REAL NOT NULL,
     PRIMARY KEY (portefeuille, datum)
 );
 
@@ -97,6 +123,7 @@ CREATE TABLE IF NOT EXISTS wachtrij (
     reden         TEXT,
     zekerheid     REAL,
     besluit_datum TEXT NOT NULL,
+    gewicht       REAL,         -- deel van de portefeuille; leeg = de standaard (10%)
     UNIQUE (portefeuille, symbool, actie, besluit_datum)
 );
 
@@ -148,6 +175,12 @@ CREATE TABLE IF NOT EXISTS ai_besluiten (
     overgeslagen  TEXT,                   -- waarom er geen volledig debat was
     nieuws_tot    TEXT NOT NULL,          -- alleen nieuws van voor dit moment
     gemaakt_op    TEXT NOT NULL,
+    -- De voorspelling, voor elk symbool elke nacht, ook bij niets doen. Hierop
+    -- wordt later gescoord: klopte de kans? (zie README, de hoofdvraag)
+    kans          REAL,                   -- kans dat het symbool beter doet dan de referentie
+    verwacht_pct  REAL,                   -- verwacht extra rendement in procentpunten
+    referentie    TEXT,                   -- SPY of BTC/USDT
+    horizon_dagen INTEGER,                -- over hoeveel kalenderdagen
     UNIQUE (portefeuille, symbool, datum)
 );
 
@@ -234,11 +267,34 @@ def verbind(pad: Path | str | None = None) -> sqlite3.Connection:
 # bestaande tabel niet aan, dus een database van voor die wijziging mist ze.
 LATERE_KOLOMMEN: dict[str, dict[str, str]] = {
     "nieuws": {"opgehaald_op": "TEXT"},
+    "wachtrij": {"gewicht": "REAL"},
+    "koersen": {"dividend": "REAL", "splitsing": "REAL"},
+    "posities": {"koopprijs": "REAL", "dividend_usd": "REAL", "koopreden": "TEXT", "bevestigd_op": "TEXT"},
+    "ai_besluiten": {
+        "kans": "REAL", "verwacht_pct": "REAL", "referentie": "TEXT", "horizon_dagen": "INTEGER",
+    },
+}
+
+# Kolommen die een andere naam kregen. Sinds de bot in dollars rekent, heten
+# de bedragen _usd in plaats van _eur.
+HERNOEMD: dict[str, dict[str, str]] = {
+    "portefeuilles": {"kas_eur": "kas_usd"},
+    "posities": {"kostprijs_eur": "kostprijs_usd"},
+    "trades": {
+        "prijs_eur": "prijs_usd", "bedrag_eur": "bedrag_usd",
+        "kosten_eur": "kosten_usd", "resultaat_eur": "resultaat_usd",
+    },
+    "waarde": {"kas_eur": "kas_usd", "posities_eur": "posities_usd", "totaal_eur": "totaal_usd"},
 }
 
 
 def _vul_ontbrekende_kolommen_aan(con: sqlite3.Connection) -> None:
-    """Voeg kolommen toe die in een oudere database nog ontbreken."""
+    """Hernoem oude kolommen en voeg kolommen toe die in een oudere database ontbreken."""
+    for tabel, namen in HERNOEMD.items():
+        bestaand = {r["name"] for r in con.execute(f"PRAGMA table_info({tabel})").fetchall()}
+        for oud, nieuw in namen.items():
+            if oud in bestaand and nieuw not in bestaand:
+                con.execute(f"ALTER TABLE {tabel} RENAME COLUMN {oud} TO {nieuw}")
     for tabel, kolommen in LATERE_KOLOMMEN.items():
         bestaand = {
             r["name"] for r in con.execute(f"PRAGMA table_info({tabel})").fetchall()
@@ -254,13 +310,17 @@ def bewaar_koersen(con: sqlite3.Connection, rijen: list[dict]) -> int:
     """Zet koersen in de database. Bestaande dagen worden overschreven."""
     if not rijen:
         return 0
+    volledig = [{"dividend": None, "splitsing": None, **r} for r in rijen]
     con.executemany(
-        """INSERT INTO koersen (symbool, datum, open, hoog, laag, slot, volume, valuta, bron)
-           VALUES (:symbool, :datum, :open, :hoog, :laag, :slot, :volume, :valuta, :bron)
+        """INSERT INTO koersen (symbool, datum, open, hoog, laag, slot, volume, valuta, bron,
+                               dividend, splitsing)
+           VALUES (:symbool, :datum, :open, :hoog, :laag, :slot, :volume, :valuta, :bron,
+                   :dividend, :splitsing)
            ON CONFLICT(symbool, datum) DO UPDATE SET
              open=excluded.open, hoog=excluded.hoog, laag=excluded.laag,
-             slot=excluded.slot, volume=excluded.volume, bron=excluded.bron""",
-        rijen,
+             slot=excluded.slot, volume=excluded.volume, bron=excluded.bron,
+             dividend=excluded.dividend, splitsing=excluded.splitsing""",
+        volledig,
     )
     con.commit()
     return len(rijen)
@@ -336,7 +396,7 @@ def leeg_handelsdata(con: sqlite3.Connection) -> None:
     maand niet meer met wat je werkelijk hebt betaald.
     """
     for tabel in (
-        "trades", "posities", "waarde", "portefeuilles", "wachtrij", "verwerkte_dagen",
+        "trades", "posities", "waarde", "portefeuilles", "wachtrij", "verwerkte_dagen", "uitkeringen",
         "ai_besluiten", "challengers", "wijzigingen", "rapporten",
     ):
         con.execute(f"DELETE FROM {tabel}")

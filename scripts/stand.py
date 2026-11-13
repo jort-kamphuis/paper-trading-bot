@@ -18,14 +18,16 @@ from bot import config as conf
 from bot import database, overzicht, statistiek
 from bot.markt import Markt
 from bot.opzet import SLEUTEL_START
+from bot.rapport import MEETLATTEN
+from bot.tekst import dollar, getal, pct
 
 
 def _reeks(con, portefeuille: str) -> tuple[list[str], list[float]]:
     rijen = con.execute(
-        "SELECT datum, totaal_eur FROM waarde WHERE portefeuille = ? ORDER BY datum",
+        "SELECT datum, totaal_usd FROM waarde WHERE portefeuille = ? ORDER BY datum",
         (portefeuille,),
     ).fetchall()
-    return [r["datum"] for r in rijen], [r["totaal_eur"] for r in rijen]
+    return [r["datum"] for r in rijen], [r["totaal_usd"] for r in rijen]
 
 
 def main() -> int:
@@ -64,7 +66,7 @@ def main() -> int:
         standen = [s for s in standen if s["portefeuille"] == args.pf]
 
     kop = (
-        f"{'portefeuille':16s} {'totaal':>9s} {'kas':>8s} {'rend.':>8s} "
+        f"{'portefeuille':18s} {'totaal':>11s} {'kas':>10s} {'rend.':>8s} "
         f"{'trades':>7s} {'daling':>8s} {'sharpe':>7s}"
     )
     print(kop)
@@ -78,9 +80,9 @@ def main() -> int:
         daling = statistiek.max_daling_pct(waarden) if waarden else 0.0
         sh = statistiek.sharpe(waarden, datums) if waarden else None
         print(
-            f"{naam:16s} {s['totaal_eur']:9.2f} {s['kas_eur']:8.2f} "
-            f"{s['rendement_pct']:+7.1f}% {aantal:7d} {daling:7.1f}% "
-            f"{(f'{sh:.2f}' if sh is not None else '-'):>7s}"
+            f"{naam:18s} {dollar(s['totaal_usd']):>11s} {dollar(s['kas_usd']):>10s} "
+            f"{pct(s['rendement_pct']):>8s} {aantal:7d} {pct(daling):>8s} "
+            f"{(getal(sh, 2) if sh is not None else '-'):>7s}"
         )
 
     # ---- open posities ----
@@ -90,7 +92,7 @@ def main() -> int:
         for pos in posities:
             print(
                 f"  {pos['portefeuille']:16s} {pos['symbool']:10s} "
-                f"ingelegd EUR {pos['kostprijs_eur']:7.2f}  sinds {pos['gekocht_op']}"
+                f"ingelegd {dollar(pos['kostprijs_usd']):>9s}  sinds {pos['gekocht_op']}"
             )
     else:
         print("  geen")
@@ -122,12 +124,11 @@ def main() -> int:
         print(f"\nLaatste {len(rijen)} trades:")
         for t in rijen:
             resultaat = ""
-            if t["actie"] == "VERKOOP" and t["resultaat_eur"] is not None:
-                teken = "+" if t["resultaat_eur"] >= 0 else ""
-                resultaat = f"  {teken}{t['resultaat_eur']:.2f} euro"
+            if t["actie"] == "VERKOOP" and t["resultaat_usd"] is not None:
+                resultaat = f"  resultaat {getal(t['resultaat_usd'], 2, teken=True)} dollar"
             print(
                 f"  {t['datum']}  {t['portefeuille']:16s} {t['actie']:8s} "
-                f"{t['symbool']:10s} EUR {t['bedrag_eur']:7.2f}{resultaat}"
+                f"{t['symbool']:10s} {dollar(t['bedrag_usd']):>9s}{resultaat}"
             )
             if t["reden"]:
                 print(f"      {t['reden']}")
@@ -137,14 +138,14 @@ def main() -> int:
     print("\nIs dit al iets, of kan het nog geluk zijn?")
     for s in standen:
         naam = s["portefeuille"]
-        if naam.startswith("benchmark_"):
+        if naam in MEETLATTEN:
             continue
         resultaten = [
-            r["resultaat_eur"]
+            r["resultaat_usd"]
             for r in con.execute(
-                """SELECT resultaat_eur FROM trades
+                """SELECT resultaat_usd FROM trades
                    WHERE portefeuille = ? AND actie = 'VERKOOP'
-                     AND resultaat_eur IS NOT NULL""",
+                     AND resultaat_usd IS NOT NULL""",
                 (naam,),
             )
         ]

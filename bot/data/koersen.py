@@ -65,6 +65,9 @@ def haal_aandelen(
         end=eind,
         interval="1d",
         auto_adjust=False,
+        # Ook dividend en splitsingen. 'Close' is wel aangepast voor
+        # splitsingen (achteraf!), niet voor dividend; zie database.py.
+        actions=True,
         progress=False,
         group_by="column",
         threads=True,
@@ -80,20 +83,30 @@ def haal_aandelen(
     for symbool in symbolen:
         if heeft_multi:
             velden = {}
-            for veld in ("Open", "High", "Low", "Close", "Volume"):
+            for veld in VELDEN:
                 if (veld, symbool) in ruw.columns:
                     velden[veld] = ruw[(veld, symbool)]
-            if len(velden) < 4:
+            if len([v for v in ("Open", "High", "Low", "Close") if v in velden]) < 4:
                 continue
             deel = pd.DataFrame(velden)
         else:
             # Bij een enkel symbool geeft yfinance gewone kolommen terug.
             if len(symbolen) != 1:
                 continue
-            deel = ruw[["Open", "High", "Low", "Close", "Volume"]].copy()
+            deel = ruw[[v for v in VELDEN if v in ruw.columns]].copy()
 
         rijen.extend(_rijen_uit(symbool, deel, onaf_vanaf))
     return rijen
+
+
+VELDEN = ("Open", "High", "Low", "Close", "Volume", "Dividends", "Stock Splits")
+
+
+def _getal_of_niets(waarde) -> float | None:
+    if waarde is None or pd.isna(waarde):
+        return None
+    getal = float(waarde)
+    return getal if getal != 0 else None
 
 
 def _rijen_uit(symbool: str, deel: pd.DataFrame, onaf_vanaf: str) -> list[dict]:
@@ -115,6 +128,8 @@ def _rijen_uit(symbool: str, deel: pd.DataFrame, onaf_vanaf: str) -> list[dict]:
                 "volume": float(rij["Volume"]) if pd.notna(rij.get("Volume")) else None,
                 "valuta": VALUTA_AANDEEL,
                 "bron": "yfinance",
+                "dividend": _getal_of_niets(rij.get("Dividends")),
+                "splitsing": _getal_of_niets(rij.get("Stock Splits")),
             }
         )
     return rijen

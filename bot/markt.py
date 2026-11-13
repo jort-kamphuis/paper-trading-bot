@@ -1,13 +1,24 @@
 """De koershistorie, klaar voor gebruik door de strategieën.
 
 Belangrijk: een strategie krijgt via dit object nooit een koers van na de
-beslisdag te zien. Daar zijn de methodes op gebouwd.
+beslisdag te zien. Alle kengetallen kijken alleen achteruit.
+
+Alle koersen zijn in dollars. Er wordt hier niets omgerekend.
+
+Periodes in kalenderdagen: aandelen handelen ongeveer 252 dagen per jaar,
+crypto 365. "60 dagen in de data" is voor een aandeel dus bijna drie maanden
+en voor crypto twee. Voor alles wat aandelen en crypto vergelijkt (de
+ranglijst van momentum, de tabel voor de AI) rekenen we daarom in
+kalenderdagen, zodat beide over dezelfde periode worden gemeten.
 """
 
 from __future__ import annotations
 
+import math
+import re
 import sqlite3
 from dataclasses import dataclass
+from datetime import date, timedelta
 
 import pandas as pd
 
@@ -23,12 +34,17 @@ class Bar:
     open: float
     slot: float
     valuta: str
+    dividend: float = 0.0
+    splitsing: float = 0.0
+
+
+def _min_dagen(datum: str, dagen: int) -> str:
+    return (date.fromisoformat(datum) - timedelta(days=dagen)).isoformat()
 
 
 class Markt:
     def __init__(self, per_symbool: dict[str, pd.DataFrame]):
         self._data = per_symbool
-        self._bereken_kengetallen()
         alle_datums: set[str] = set()
         for df in self._data.values():
             alle_datums.update(df.index)
@@ -41,7 +57,10 @@ class Markt:
     def uit_database(
         cls, con: sqlite3.Connection, symbolen: list[str] | None = None
     ) -> "Markt":
-        vraag = "SELECT symbool, datum, open, hoog, laag, slot, volume, valuta FROM koersen"
+        vraag = (
+            "SELECT symbool, datum, open, hoog, laag, slot, volume, valuta, "
+            "COALESCE(dividend, 0) AS dividend, COALESCE(splitsing, 0) AS splitsing FROM koersen"
+        )
         params: tuple = ()
         if symbolen:
             plekken = ",".join("?" * len(symbolen))
@@ -60,37 +79,27 @@ class Markt:
             per_symbool[str(symbool)] = deel
         return cls(per_symbool)
 
-    def _bereken_kengetallen(self) -> None:
-        """Reken de kengetallen een keer uit over de hele reeks (zie indicatoren.py)."""
-        for df in self._data.values():
-            slot = df["slot"]
-            df["ma20"] = indicatoren.voortschrijdend_gemiddelde(slot, 20)
-            df["ma100"] = indicatoren.voortschrijdend_gemiddelde(slot, 100)
-            df["rsi14"] = indicatoren.rsi(slot, 14)
-            df["rend60"] = indicatoren.rendement_over(slot, 60)
-
     def _bouw_slotmatrix(self) -> None:
         """Een tabel met alle slotkoersen, waarin gaten worden opgevuld.
 
         Op een dag dat de beurs dicht is, is een aandeel nog steeds iets waard:
-        namelijk de laatste koers. Dat vullen we hier in (alleen vooruit, dus
-        nooit met een koers van later). Zonder dit zou de waarde van een
-        portefeuille in het weekend wegvallen.
+        de laatste koers. Dat vullen we hier in (alleen vooruit, dus nooit met
+        een koers van later). Zonder dit zou de waarde in het weekend wegvallen.
         """
-        self._valuta_van: dict[str, str] = {}
         if not self._data:
             self._slot_ingevuld = pd.DataFrame()
             return
         kolommen = {s: df["slot"] for s, df in self._data.items()}
-        matrix = pd.DataFrame(kolommen).sort_index().ffill()
-        self._slot_ingevuld = matrix
-        for symbool, df in self._data.items():
-            self._valuta_van[symbool] = str(df["valuta"].iloc[0]) if len(df) else "USD"
+        self._slot_ingevuld = pd.DataFrame(kolommen).sort_index().ffill()
 
     def handelsdagen_van(self, symbool: str) -> list[str]:
         """De dagen waarop dit symbool echt gehandeld heeft."""
         df = self._data.get(symbool)
         return [] if df is None else [str(d) for d in df.index]
+
+    def is_handelsdag(self, symbool: str, datum: str) -> bool:
+        df = self._data.get(symbool)
+        return df is not None and datum in df.index
 
     # ---------- opvragen ----------
 
@@ -113,21 +122,19 @@ class Markt:
             open=float(rij["open"]),
             slot=float(rij["slot"]),
             valuta=str(rij["valuta"]),
+            dividend=float(rij["dividend"]) if "dividend" in rij and pd.notna(rij["dividend"]) else 0.0,
+            splitsing=float(rij["splitsing"]) if "splitsing" in rij and pd.notna(rij["splitsing"]) else 0.0,
         )
 
     @staticmethod
     def _zorg_voor(df: pd.DataFrame, naam: str) -> bool:
-        """Reken een kengetal uit als het er nog niet is, zoals 'ma30' of 'rend90'.
+        """Reken een kengetal uit als het er nog niet is, zoals 'ma50' of 'rsi2'.
 
-        Zo kan een challenger met andere instellingen (bijvoorbeeld 90 dagen
-        terugkijken in plaats van 60) gewoon draaien. Ook deze kengetallen
-        kijken alleen achteruit, net als de vaste (zie indicatoren.py).
-        Geeft False bij een naam die we niet kennen.
+        Deze tellen in dagen van de data (handelsdagen). Ze kijken alleen
+        achteruit. Geeft False bij een naam die we niet kennen.
         """
         if naam in df.columns:
             return True
-        import re
-
         gevonden = re.fullmatch(r"(ma|rsi|rend)(\d+)", naam)
         if not gevonden:
             return False
@@ -166,22 +173,90 @@ class Markt:
             return None
         return float(waarde)
 
-    def tot_en_met(self, symbool: str, datum: str) -> pd.DataFrame:
-        """De geschiedenis tot en met die dag. Nooit verder."""
+    # ---------- in kalenderdagen ----------
+
+    def _reeks_tot(self, symbool: str, datum: str) -> pd.DataFrame | None:
         df = self._data.get(symbool)
         if df is None:
-            return pd.DataFrame()
+            return None
         return df.loc[df.index <= datum]
 
-    def volgende_bar_na(self, symbool: str, datum: str) -> Bar | None:
-        """De eerste dag na <datum> waarop dit symbool handelde. Hier voeren we orders uit."""
+    def slot_op_of_voor(self, symbool: str, datum: str) -> float | None:
+        """De laatste slotkoers op of voor die dag."""
+        deel = self._reeks_tot(symbool, datum)
+        if deel is None or len(deel) == 0:
+            return None
+        return float(deel["slot"].iloc[-1])
+
+    def kalender_rendement(self, symbool: str, datum: str, dagen: int) -> float | None:
+        """Rendement in procent over de laatste <dagen> kalenderdagen.
+
+        Van de laatste slotkoers op of voor (datum - dagen) tot de laatste
+        slotkoers op of voor datum. None als de geschiedenis niet ver genoeg terug gaat.
+        """
+        deel = self._reeks_tot(symbool, datum)
+        if deel is None or len(deel) < 2:
+            return None
+        begin_datum = _min_dagen(datum, dagen)
+        voor = deel.loc[deel.index <= begin_datum]
+        if len(voor) == 0:
+            return None
+        begin = float(voor["slot"].iloc[-1])
+        eind = float(deel["slot"].iloc[-1])
+        if begin <= 0:
+            return None
+        return 100.0 * (eind / begin - 1.0)
+
+    def kalender_schommeling(self, symbool: str, datum: str, dagen: int) -> float | None:
+        """De gemiddelde schommeling per dag in procent (standaardafwijking), over <dagen> kalenderdagen."""
+        deel = self._reeks_tot(symbool, datum)
+        if deel is None:
+            return None
+        venster = deel.loc[deel.index > _min_dagen(datum, dagen)]["slot"]
+        if len(venster) < 5:
+            return None
+        r = venster.pct_change().dropna()
+        if len(r) < 4:
+            return None
+        return float(r.std(ddof=1) * 100.0)
+
+    def kalender_hoogste(self, symbool: str, datum: str, dagen: int) -> float | None:
+        deel = self._reeks_tot(symbool, datum)
+        if deel is None:
+            return None
+        venster = deel.loc[deel.index > _min_dagen(datum, dagen)]["slot"]
+        return float(venster.max()) if len(venster) else None
+
+    def gecorrigeerd_rendement(self, symbool: str, datum: str, dagen: int) -> float | None:
+        """Rendement gedeeld door de schommeling over dezelfde periode.
+
+        Zo wint niet vanzelf het symbool dat het wildst beweegt (vaak crypto):
+        een stijging van 20% met veel schommeling telt minder dan 20% bij weinig.
+        """
+        rend = self.kalender_rendement(symbool, datum, dagen)
+        schom = self.kalender_schommeling(symbool, datum, dagen)
+        deel = self._reeks_tot(symbool, datum)
+        if rend is None or not schom or deel is None:
+            return None
+        n = int((deel.index > _min_dagen(datum, dagen)).sum())
+        if n < 5:
+            return None
+        return rend / (schom * math.sqrt(n))
+
+    def volume_verhouding(self, symbool: str, datum: str, dagen: int = 50) -> float | None:
+        """Het volume van vandaag gedeeld door het gemiddelde van de <dagen> handelsdagen ervoor."""
         df = self._data.get(symbool)
-        if df is None:
+        if df is None or datum not in df.index or "volume" not in df.columns:
             return None
-        later = df.index[df.index > datum]
-        if len(later) == 0:
+        plek = df.index.get_loc(datum)
+        if not isinstance(plek, int) or plek < dagen:
             return None
-        return self.bar(symbool, str(later[0]))
+        eerder = df["volume"].iloc[plek - dagen:plek]
+        gemiddeld = float(eerder.mean())
+        nu = df["volume"].iloc[plek]
+        if not gemiddeld or pd.isna(nu):
+            return None
+        return float(nu) / gemiddeld
 
     def beursdagen_tussen(self, symbool: str, van: str, tot: str) -> int:
         """Hoeveel handelsdagen van dit symbool er tussen twee datums liggen."""
@@ -190,22 +265,34 @@ class Markt:
             return 0
         return int(((df.index > van) & (df.index <= tot)).sum())
 
-    def slotkoersen_eur(self, datum: str, wisselkoers) -> dict[str, float]:
-        """Alle slotkoersen van die dag in euro's.
+    def tot_en_met(self, symbool: str, datum: str) -> pd.DataFrame:
+        """De geschiedenis tot en met die dag. Nooit verder."""
+        df = self._data.get(symbool)
+        if df is None:
+            return pd.DataFrame()
+        return df.loc[df.index <= datum]
+
+    def volgende_bar_na(self, symbool: str, datum: str) -> Bar | None:
+        df = self._data.get(symbool)
+        if df is None:
+            return None
+        later = df.index[df.index > datum]
+        if len(later) == 0:
+            return None
+        return self.bar(symbool, str(later[0]))
+
+    def slotkoersen_usd(self, datum: str) -> dict[str, float]:
+        """Alle slotkoersen van die dag, in dollars.
 
         Handelde een symbool die dag niet, dan gebruiken we zijn laatst bekende
         koers. Zo houdt een positie in het weekend gewoon zijn waarde.
         """
-        if len(self._slot_ingevuld) == 0 or datum not in self._slot_ingevuld.index:
+        if len(self._slot_ingevuld) == 0:
             return {}
-        koers = wisselkoers.op(datum)
+        if datum not in self._slot_ingevuld.index:
+            eerder = self._slot_ingevuld.index[self._slot_ingevuld.index <= datum]
+            if len(eerder) == 0:
+                return {}
+            datum = str(eerder[-1])
         rij = self._slot_ingevuld.loc[datum]
-        uitkomst: dict[str, float] = {}
-        for symbool, waarde in rij.items():
-            if pd.isna(waarde):
-                continue  # dit symbool bestond toen nog niet in onze data
-            slot = float(waarde)
-            uitkomst[str(symbool)] = (
-                slot if self._valuta_van.get(str(symbool)) == "EUR" else slot / koers
-            )
-        return uitkomst
+        return {str(s): float(w) for s, w in rij.items() if not pd.isna(w)}

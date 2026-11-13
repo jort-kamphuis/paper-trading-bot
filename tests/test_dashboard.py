@@ -156,6 +156,7 @@ def test_eigen_meetlat():
 
 
 def test_kansen_per_soort_vraag_met_vakken_van_005(tmp_path, con, cfg, gevuld):
+    cfg = {**cfg, "meting": {**cfg["meting"], "start": "2025-01-01"}}  # de testdata valt dan in de meting
     uit, _ = _bouw(tmp_path, con, cfg)
     ka = _json(uit / "data/echt/kansen.json")
     g = {x["vraag"]: x for x in ka["groepen"] if x["portefeuille"] == "ai_analist"}
@@ -265,3 +266,9 @@ def test_elk_telegrambericht_krijgt_de_dashboardlink(monkeypatch):
     assert url and url.startswith("https://")
     assert verstuurd[-1]["text"].endswith("Dashboard: " + url)
     assert telegram.met_dashboardlink("al met " + url) == "al met " + url, "niet twee keer"
+
+
+def test_kansen_buiten_de_meetperiode_tellen_niet_mee(tmp_path, con, cfg, gevuld):
+    """In de echte meting tellen alleen kansen van de start tot en met de einddatum."""
+    uit, _ = _bouw(tmp_path, con, cfg)  # start 2026-11-23, de testdata is van daarvoor
+    assert _json(uit / "data/echt/kansen.json")["groepen"] == []

@@ -67,31 +67,33 @@ SCHEMA_DEBAT = _schema(
     ["argument", "sterkste_punt", "overtuiging"],
 )
 
+# Eerst de onderbouwing, dan de getallen: zo volgt de kans uit de afweging en
+# wordt de afweging niet achteraf bij een getal geschreven.
 SCHEMA_KANS = _schema(
     {
-        "kans": {
-            "type": "number",
-            "description": (
-                "0 tot 1: de kans dat het antwoord op de vraag in het bericht ja is: over de "
-                "komende 14 kalenderdagen, na 0,3% kosten, beter dan de referentie (bij "
-                "referentie kas: meer gestegen dan de kosten). 0,5 betekent: geen idee."
-            ),
-        },
-        "verwacht_extra_rendement_pct": {
-            "type": "number",
-            "description": (
-                "Het verwachte rendement van dit symbool min dat van de referentie over 14 "
-                "kalenderdagen, in procentpunten, voor kosten (bij referentie kas: het "
-                "verwachte rendement zelf). Kan negatief zijn."
-            ),
-        },
         "onderbouwing": {
             "type": "string",
             "description": "Hooguit drie zinnen, in gewone taal, zodat een leek het snapt.",
         },
         "belangrijkste_risico": {"type": "string", "description": "Een zin."},
+        "kans": {
+            "type": "number",
+            "description": (
+                "0 tot 1: de kans dat het antwoord op de vraag in het bericht ja is, over de "
+                "periode die daar staat en na 0,3% kosten. Zonder bijzondere reden: de "
+                "basiskans uit het bericht."
+            ),
+        },
+        "verwacht_extra_rendement_pct": {
+            "type": "number",
+            "description": (
+                "Het verwachte rendement van dit symbool min dat van de referentie over "
+                "dezelfde periode, in procentpunten, voor kosten (bij referentie kas: het "
+                "verwachte rendement zelf). Kan negatief zijn."
+            ),
+        },
     },
-    ["kans", "verwacht_extra_rendement_pct", "onderbouwing", "belangrijkste_risico"],
+    ["onderbouwing", "belangrijkste_risico", "kans", "verwacht_extra_rendement_pct"],
 )
 
 
@@ -104,7 +106,8 @@ SYSTEEM_NIEUWS = (
     "overnames. Je probeert niet te voorspellen of de koers stijgt; nieuws dat al in "
     "de koppen staat, zit meestal al in de koers. Veel financieel nieuws is ruis "
     "(koersoverzichten, fondsen die iets kochten, algemene beschouwingen); noem dat "
-    "dan ook zo.\n\n" + ONDERAAN
+    "dan ook zo. Tel alleen wat over het symbool zelf gaat: koppen over andere "
+    "bedrijven of over de markt in het algemeen zeggen weinig over dit symbool.\n\n" + ONDERAAN
 )
 
 SYSTEEM_BULL = (
@@ -125,21 +128,24 @@ _KANS_REGELS = (
     "Je beslist NIET of er gekocht of verkocht wordt. Dat doet de code met vaste "
     "regels. Jij geeft een eerlijke kans en een verwacht extra rendement.\n\n"
     "Wees gekalibreerd. Als je honderd keer 0,6 zegt, moet het ongeveer zestig keer "
-    "kloppen. Over 14 dagen beweegt een koers voor een groot deel door toeval; een "
-    "kans ver van 0,5 hoort bij een duidelijke reden in de gegevens. Je wordt achteraf "
-    "gescoord op hoe goed je kansen klopten, niet op hoe vaak je iets durfde."
+    "kloppen. Over 14 dagen beweegt een koers voor een groot deel door toeval. In het "
+    "bericht staat de basiskans: hoe vaak het antwoord op deze vraag de afgelopen twee "
+    "jaar ja was voor dit soort symbool. Die is niet 0,5. Weet je niets bijzonders, geef "
+    "dan die basiskans. Wijk er alleen van af met een duidelijke reden in de gegevens, "
+    "naar boven en naar beneden even gemakkelijk. Je wordt achteraf gescoord op hoe "
+    "goed je kansen klopten, niet op hoe vaak je iets durfde."
 )
 
 SYSTEEM_RISK = (
-    "Je bent de risk manager. Je leest de kengetallen, het nieuws en beide kanten van "
-    "het debat, en schat in hoe dit symbool het de komende 14 kalenderdagen doet "
-    "tegenover zijn referentie. De vraag staat in het bericht.\n\n" + _KANS_REGELS + "\n\n" + ONDERAAN
+    "Je bent de voorspeller van het team. Je leest de kengetallen, het nieuws en beide "
+    "kanten van het debat, en schat in hoe dit symbool het doet tegenover zijn "
+    "referentie. De vraag, met de precieze periode, staat in het bericht.\n\n" + _KANS_REGELS + "\n\n" + ONDERAAN
 )
 
 SYSTEEM_ENKEL = (
     "Je bent een nuchtere analist. Je leest de kengetallen en de nieuwskoppen, weegt "
-    "zelf de argumenten voor en tegen, en schat in hoe dit symbool het de komende 14 "
-    "kalenderdagen doet tegenover zijn referentie. De vraag staat in het bericht.\n\n" + _KANS_REGELS + "\n\n" + ONDERAAN
+    "zelf de argumenten voor en tegen, en schat in hoe dit symbool het doet tegenover "
+    "zijn referentie. De vraag, met de precieze periode, staat in het bericht.\n\n" + _KANS_REGELS + "\n\n" + ONDERAAN
 )
 
 
@@ -149,17 +155,33 @@ SYSTEEM_ENKEL = (
 def vraag_tekst(symbool: str, kenmerken: dict) -> str:
     """De vraag waar de kans over gaat, uitgeschreven."""
     ref = kenmerken["referentie"]
+    # Zo wordt er ook gekocht en gescoord (bot/ai/kalibratie.py). Zonder deze zin kan
+    # het model denken dat het een sprong na het slot van de beslisdag nog meepakt.
+    periode = (
+        "gemeten van de openingskoers van de eerstvolgende handelsdag na de beslisdag tot de "
+        "slotkoers 14 kalenderdagen na de beslisdag"
+    )
+    nabeurs = (
+        "Nieuws van na het slot van de beslisdag zit bij die opening al in de koers; daar "
+        "valt niets meer aan te verdienen."
+    )
+    basis = kenmerken.get("basiskans")
+    basiskans = (
+        f" Basiskans: de afgelopen twee jaar was het antwoord op deze vraag in ongeveer "
+        f"{round(100 * basis)}% van de gevallen ja voor dit soort symbool."
+        if basis is not None else ""
+    )
     if kenmerken.get("vraag") == ABSOLUUT:
         return (
-            f"De vraag: stijgt {symbool} de komende 14 kalenderdagen meer dan ongeveer 0,3% "
-            f"kosten? {symbool} is zelf de meetlat van de markt; vergelijken met zichzelf "
-            f"zegt niets, dus de referentie is kas (geld dat niets doet). Het verwachte extra "
-            f"rendement is hier het verwachte rendement van {symbool} zelf."
+            f"De vraag: stijgt {symbool} meer dan ongeveer 0,3% kosten, {periode}? {symbool} is "
+            f"zelf de meetlat van de markt; vergelijken met zichzelf zegt niets, dus de referentie "
+            f"is kas (geld dat niets doet). {nabeurs} Het verwachte extra rendement is hier het "
+            f"verwachte rendement van {symbool} zelf over die periode.{basiskans}"
         )
     return (
-        f"De vraag: doet {symbool} het de komende 14 kalenderdagen beter dan {ref}, na "
-        f"ongeveer 0,3% kosten? Het verwachte extra rendement is het rendement van "
-        f"{symbool} min dat van {ref}."
+        f"De vraag: doet {symbool} het beter dan {ref}, na ongeveer 0,3% kosten, {periode}? "
+        f"{nabeurs} Het verwachte extra rendement is het rendement van {symbool} min dat van "
+        f"{ref} over die periode.{basiskans}"
     )
 
 

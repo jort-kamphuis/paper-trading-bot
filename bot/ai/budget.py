@@ -7,9 +7,9 @@ De bewaking werkt met twee sloten:
 1. Dit slot. De bot telt zijn eigen uitgaven van deze maand op en stopt netjes
    als het bedrag uit config.yaml bereikt is. Hij meldt dat en de andere
    strategieën lopen gewoon door.
-2. De limiet die je zelf in de Anthropic-console zet. Die hoort hoger te staan,
-   zodat dit slot eerst dichtgaat. Dan stopt de bot uit zichzelf in plaats van
-   dat hij tegen een foutmelding aanloopt.
+2. Het tegoed in de Anthropic-console: in een keer gekocht voor de hele meting,
+   met automatisch opwaarderen uit. Is dat op, dan herkent de bot de fout en
+   meldt hij "tegoed op" in Telegram.
 """
 
 from __future__ import annotations
@@ -114,6 +114,43 @@ class Budget:
                 verzoek_id,
             ),
         )
+
+    # ---------- reserve voor de hoofdvraag ----------
+
+    def reserve_voor(self, hoofd: str, datum: str, cfg: dict) -> float:
+        """Wat de portefeuille van de hoofdvraag deze maand nog nodig heeft.
+
+        Zijn gemiddelde kosten per nacht, maal de AI-nachten die deze maand nog komen.
+        Een bijportefeuille (het Haiku-potje, ai_enkel) mag alleen draaien als er
+        daarna nog zoveel over is: raakt het budget krap, dan stoppen die eerst en
+        maakt de hoofdvraag de maand af.
+        """
+        from datetime import date, timedelta
+
+        from bot.volledigheid import beurs_open_volgens_kalender
+
+        rij = self.con.execute(
+            """SELECT AVG(s) g FROM (SELECT SUM(kosten_usd) s FROM ai_besluiten
+                                      WHERE portefeuille = ? GROUP BY datum HAVING s > 0)""",
+            (hoofd,),
+        ).fetchone()
+        per_nacht = float(rij["g"] or 0.0)
+        nachten = 0
+        dag = date.fromisoformat(datum) + timedelta(days=1)
+        # Een beslisdag telt voor de maand waarin de ronde draait: de dag erna.
+        while (dag + timedelta(days=1)).strftime("%Y-%m") <= self.maand:
+            if (dag + timedelta(days=1)).strftime("%Y-%m") == self.maand and beurs_open_volgens_kalender(cfg, dag.isoformat()):
+                nachten += 1
+            dag += timedelta(days=1)
+        return per_nacht * nachten
+
+    def nachtkosten(self, portefeuille: str) -> float:
+        rij = self.con.execute(
+            """SELECT AVG(s) g FROM (SELECT SUM(kosten_usd) s FROM ai_besluiten
+                                      WHERE portefeuille = ? GROUP BY datum HAVING s > 0)""",
+            (portefeuille,),
+        ).fetchone()
+        return float(rij["g"] or 0.0)
 
     # ---------- overzicht ----------
 

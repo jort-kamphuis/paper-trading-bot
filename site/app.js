@@ -68,6 +68,7 @@ async function laadOfNiets(pad) { try { return await laad(pad); } catch (e) { re
 
 const VAST = {
   benchmark_spy: '#9598a1', benchmark_btc: '#ffb74d', gelijk_alle: '#e0e3eb', gelijk_ai: '#b2b5be',
+  gelijk_aandelen: '#8d9db6', gelijk_crypto: '#d4a373',
   ai_analist: '#2962ff', proef_ai_mix: '#2962ff', ai_controle_haiku: '#26c6da', proef_ai_haiku: '#26c6da',
   ai_enkel: '#ab47bc', proef_ai_enkel: '#ab47bc', proef_ai_opus: '#f06292',
   momentum: '#66bb6a', mean_reversion: '#fdd835', trend: '#ff7043',
@@ -80,8 +81,8 @@ function kleur(naam) {
   if (!vrijeKleur.has(naam)) vrijeKleur.set(naam, REST[vrijeKleur.size % REST.length]);
   return vrijeKleur.get(naam);
 }
-const isMeetlat = n => ['benchmark_spy', 'benchmark_btc', 'gelijk_alle', 'gelijk_ai'].includes(n);
-const NAAM = { benchmark_spy: 'SPY kopen en vasthouden', benchmark_btc: 'BTC kopen en vasthouden', gelijk_alle: 'gelijk_alle (meetlat)', gelijk_ai: 'gelijk_ai (meetlat)' };
+const isMeetlat = n => ['benchmark_spy', 'benchmark_btc', 'gelijk_alle', 'gelijk_ai', 'gelijk_aandelen', 'gelijk_crypto'].includes(n);
+const NAAM = { benchmark_spy: 'SPY kopen en vasthouden', benchmark_btc: 'BTC kopen en vasthouden', gelijk_alle: 'gelijk_alle (meetlat)', gelijk_ai: 'gelijk_ai (meetlat)', gelijk_aandelen: 'gelijk_aandelen (meetlat per soort)', gelijk_crypto: 'gelijk_crypto (meetlat per soort)' };
 const naam = n => NAAM[n] || n;
 function vraagTekst(v) { return v === 'absoluut' ? 'absoluut: SPY en BTC zelf, tegen kas' : 'relatief: tegen SPY of BTC'; }
 
@@ -169,7 +170,7 @@ async function tekenOverzicht(p) {
         cijfer('p-waarde (eenzijdig)', h.p_waarde === null ? 'nog te weinig dagen' : getal(h.p_waarde, 2)),
         cijfer('einddatum ' + datum(h.einde), 'nog ' + h.dagen_tot_einde + ' dagen')),
       el('p', { class: 'klein', style: 'margin:8px 0 0' },
-        el('span', { class: 'dim', text: 'Ter vergelijking, niet de hoofdvraag: ' + h.meetlat + ' zelf ' + pct(h.meetlat_rendement_pct) + ', verschil ' + pp(h.ruw_verschil_pp) + (h.ruw_p_waarde === null ? '' : ', p ' + getal(h.ruw_p_waarde, 2)) + '.' })),
+        el('span', { class: 'dim', text: 'Ter vergelijking, niet de hoofdvraag: tegen meetlatten van dezelfde soort (aandelen of crypto), even belegd: ' + pp(h.soort_verschil_pp) + (h.soort_p_waarde === null || h.soort_p_waarde === undefined ? '' : ', p ' + getal(h.soort_p_waarde, 2)) + '. Tegen ' + h.meetlat + ' zelf (' + pct(h.meetlat_rendement_pct) + '): ' + pp(h.ruw_verschil_pp) + (h.ruw_p_waarde === null ? '' : ', p ' + getal(h.ruw_p_waarde, 2)) + '. Handelskosten van ' + h.ai + ' tot nu toe: ' + (h.ai_kosten_pp === null || h.ai_kosten_pp === undefined ? '-' : getal(h.ai_kosten_pp, 2) + ' procentpunt') + '; de meetlat betaalt geen kosten.' })),
       el('p', { style: 'margin:10px 0 0' }, el('span', { class: 'pil ' + cls, text: tekstLabel })),
       el('p', { class: 'dim klein', style: 'margin:6px 0 0', text: 'De meetlat staat elke dag even veel belegd als ' + h.ai + ' de dag ervoor, de rest in kas. Zo meet het verschil het kiezen, en niet hoeveel geld er in kas staat. Tot de koers van de einddatum er is, blijft dit "nog niet te zeggen", ook bij een lage p-waarde. Daarna "ja" bij een hoger rendement en een p-waarde van 0,05 of lager, anders "nee". Er wordt nooit verder gerekend dan de einddatum.' })));
   }
@@ -226,7 +227,7 @@ async function tekenOverzicht(p) {
       lastValueVisible: true, title: '',
     }));
     s.setData(pf.reeks.filter(r => r[1] !== null).map(r => ({ time: r[0], value: r[1] })));
-    const standaardAan = !pf.naam.endsWith('_ai') && !/_[AB]\d+$/.test(pf.naam);
+    const standaardAan = !pf.naam.endsWith('_ai') && !/_[AB]\d+$/.test(pf.naam) && !['gelijk_aandelen', 'gelijk_crypto'].includes(pf.naam);
     s.applyOptions({ visible: standaardAan });
     const chip = el('button', { type: 'button', class: 'chip' + (standaardAan ? '' : ' uit'), 'aria-pressed': String(standaardAan) },
       el('span', { class: 'stip', style: 'background:' + kleur(pf.naam) + (meetlat ? ';height:2px;border-top:1px dashed ' + kleur(pf.naam) : '') }), naam(pf.naam));
@@ -282,9 +283,12 @@ async function tekenKansen(p) {
       } else {
         const breedte = Math.max(0, Math.min(100, g.brier / 0.5 * 100));
         kaart.append(
-          el('div', { class: 'cijfers', style: 'margin-top:8px' }, cijfer('Brier', getal(g.brier, 3), g.brier < g.brier_basiskans ? 'pos' : 'neg'), cijfer('altijd de basiskans', getal(g.brier_basiskans, 3)), cijfer('gescoord', String(g.n)), cijfer('gemiddelde kans', getal(g.gem_kans, 2)), cijfer('kwam uit', pct(g.kwam_uit_pct, 0, false))),
+          el('div', { class: 'cijfers', style: 'margin-top:8px' }, cijfer('Brier', getal(g.brier, 3)), cijfer('altijd de basiskans', getal(g.brier_basiskans, 3)), cijfer('gescoord', String(g.n)), cijfer('gemiddelde kans', getal(g.gem_kans, 2)), cijfer('kwam uit', pct(g.kwam_uit_pct, 0, false))),
           el('div', { class: 'balk', title: 'Brier tegen 0,25' }, el('div', { style: 'width:' + breedte + '%' })),
           el('div', { class: 'dim klein', text: 'de streep tot halverwege is 0,250 (geen idee)' }),
+          el('p', { class: 'klein', style: 'margin:6px 0 0', text: g.alleen_tonen
+            ? 'Alleen ter informatie: SPY en BTC leveren te weinig onafhankelijke waarnemingen voor een conclusie.'
+            : 'Beter dan de basiskans? ' + g.beslisdagen + ' beslisdagen, ' + (g.p_beter_dan_basiskans === null ? 'nog te weinig voor de toets.' : 'p ' + getal(g.p_beter_dan_basiskans, 2) + ' (verkennend, eenzijdig, in blokken van 10 beslisdagen).') }),
           kalibratieSvg(g.vakken),
           el('div', { class: 'schuif' }, el('table', { class: 'tabel' },
             el('thead', null, el('tr', null, el('th', { text: 'kans' }), el('th', { class: 'getal', text: 'aantal' }), el('th', { class: 'getal', text: 'gemiddeld' }), el('th', { class: 'getal', text: 'kwam uit' }))),

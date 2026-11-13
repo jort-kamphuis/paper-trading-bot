@@ -17,6 +17,12 @@ Kopen
   vooraan in de lijst staat. Op de kans en niet op de verwachting: bij SPY en BTC
   (tegen kas) zit in de verwachting de hele marktstijging, bij de rest alleen het
   verschil met SPY of BTC; de kans is bij beide vragen even groot te krijgen;
+* hooguit 2 cryptoposities tegelijk (config: max_crypto), net als bij mean
+  reversion: cryptomunten bewegen vaak samen, dus meer zou vooral een grote gok op
+  een richting zijn;
+* bij een gelijke kans (het model geeft vaak ronde getallen) gaat het symbool voor
+  met de grootste verwachting GEDEELD DOOR zijn dagschommeling. Anders wint bij een
+  gelijke kans altijd het beweeglijkste symbool, en dat is meestal crypto;
 * niet als het beoordelen die nacht niet compleet was (budget op of fouten): dan
   zou de keuze scheef zijn naar de symbolen die wel beoordeeld zijn.
 """
@@ -27,6 +33,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from bot.ai.analist import Beoordeling
+from bot.config import is_crypto
 from bot.portefeuille import Positie
 from bot.strategieen.basis import Order
 from bot.tekst import getal
@@ -41,6 +48,18 @@ class Uitkomst:
 def _houdtijd_om(positie: Positie, datum: str, dagen: int) -> bool:
     sinds = positie.bevestigd_op or positie.gekocht_op
     return (date.fromisoformat(datum) - date.fromisoformat(sinds)).days >= dagen
+
+
+def _verwacht_per_schommeling(b: Beoordeling) -> float:
+    """De verwachting gedeeld door de dagschommeling (uit de kengetallen die het model zag)."""
+    schommeling = ((b.stappen or {}).get("kenmerken") or {}).get("schommeling_per_dag_28d_pct")
+    try:
+        schommeling = float(schommeling)
+    except (TypeError, ValueError):
+        schommeling = 0.0
+    # Zonder bruikbare schommeling (te weinig koersen): reken met 1% per dag, een
+    # gewone waarde voor een aandeel, zodat de verwachting zelf dan de doorslag geeft.
+    return b.verwacht_pct / (schommeling if schommeling > 0 else 1.0)
 
 
 def voldoet_aan_koopregel(b: Beoordeling | None, regels: dict) -> bool:
@@ -103,8 +122,17 @@ def kies(
         b for s, b in beoordelingen.items()
         if s not in bezet and s not in verkocht and voldoet_aan_koopregel(b, regels)
     ]
-    kandidaten.sort(key=lambda b: (b.kans, b.verwacht_pct), reverse=True)
-    for b in kandidaten[:vrij]:
+    kandidaten.sort(key=lambda b: (b.kans, _verwacht_per_schommeling(b)), reverse=True)
+    max_crypto = regels.get("max_crypto")
+    crypto = sum(1 for s in bezet if is_crypto(s))
+    for b in kandidaten:
+        if vrij <= 0:
+            break
+        if is_crypto(b.symbool):
+            if max_crypto is not None and crypto >= int(max_crypto):
+                continue
+            crypto += 1
+        vrij -= 1
         uit.orders.append(
             Order(
                 symbool=b.symbool,

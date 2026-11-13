@@ -201,6 +201,23 @@ def _rapportdagen_in_meting(cfg: dict) -> int:
     return n
 
 
+def zwaarste_maand(cfg: dict) -> tuple[str, int]:
+    """De maand (van de ronde, dus de dag na de beslisdag) met de meeste AI-nachten in de meting."""
+    from collections import Counter
+    from datetime import date, timedelta
+
+    from bot.volledigheid import beurs_open_volgens_kalender
+
+    m = cfg.get("meting") or {}
+    dag, einde = date.fromisoformat(str(m["start"])), date.fromisoformat(str(m["einde"]))
+    teller: Counter = Counter()
+    while dag <= einde:
+        if beurs_open_volgens_kalender(cfg, dag.isoformat()):
+            teller[(dag + timedelta(days=1)).strftime("%Y-%m")] += 1
+        dag += timedelta(days=1)
+    return teller.most_common(1)[0] if teller else ("", 0)
+
+
 @dataclass
 class MetingBedrag:
     symbolen: int
@@ -273,11 +290,16 @@ def bedrag_als_tekst(b: MetingBedrag, cfg: dict, marge_pct: float = 20.0) -> str
         f"Totaal: {dollar(b.totaal_usd)}. Met {getal(marge_pct, 0)}% marge: "
         f"{dollar(b.totaal_usd * (1 + marge_pct / 100.0))}."
     )
-    maanden = max(1.0, b.beursdagen / BEURSDAGEN_PER_MAAND)
-    per_maand = b.totaal_usd / maanden
+    # Het budget in de bot telt per maand van de ronde. Toets op de zwaarste maand,
+    # niet op het gemiddelde: december heeft meer AI-nachten dan februari.
+    maand, nachten = zwaarste_maand(cfg)
+    per_nacht = sum(b.per_portefeuille.values()) / b.beursdagen if b.beursdagen else 0.0
+    zwaarst = per_nacht * nachten
     budget = float(cfg["ai"]["budget"]["max_usd_per_maand"])
     regels.append(
-        f"Dat is ongeveer {dollar(per_maand)} per maand; het budget in de bot staat op {dollar(budget)} per maand"
-        + (". LET OP: dat past niet, de AI zou dan halverwege een maand stoppen met kopen." if per_maand > budget else ".")
+        f"De zwaarste maand is {maand} ({nachten} AI-nachten): ongeveer {dollar(zwaarst)}; "
+        f"het budget in de bot staat op {dollar(budget)} per maand"
+        + (". LET OP: dat past niet. De bijportefeuilles stoppen dan eerder, zodat ai_analist de maand afmaakt."
+           if zwaarst > budget else ".")
     )
     return "\n".join(regels)

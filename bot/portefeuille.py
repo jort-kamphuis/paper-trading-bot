@@ -306,13 +306,23 @@ class Portefeuille:
 
     def bewaar_waarde(self, con: sqlite3.Connection, datum: str, prijzen_usd: dict[str, float]) -> None:
         posities_usd = self.posities_waarde(prijzen_usd)
+        # Ook hoeveel daarvan in crypto zit: nodig om achteraf te vergelijken met een
+        # meetlat van dezelfde soort (aandelen of crypto), even belegd.
+        from bot.config import is_crypto
+
+        alles = dict(self.posities)
+        self.posities = {s: p for s, p in alles.items() if is_crypto(s)}
+        try:
+            crypto_usd = self.posities_waarde(prijzen_usd)
+        finally:
+            self.posities = alles
         con.execute(
-            """INSERT INTO waarde (portefeuille, datum, kas_usd, posities_usd, totaal_usd)
-               VALUES (?,?,?,?,?)
+            """INSERT INTO waarde (portefeuille, datum, kas_usd, posities_usd, totaal_usd, crypto_usd)
+               VALUES (?,?,?,?,?,?)
                ON CONFLICT(portefeuille, datum) DO UPDATE SET
                  kas_usd=excluded.kas_usd, posities_usd=excluded.posities_usd,
-                 totaal_usd=excluded.totaal_usd""",
-            (self.naam, datum, self.kas_usd, posities_usd, self.kas_usd + posities_usd),
+                 totaal_usd=excluded.totaal_usd, crypto_usd=excluded.crypto_usd""",
+            (self.naam, datum, self.kas_usd, posities_usd, self.kas_usd + posities_usd, crypto_usd),
         )
 
     @classmethod

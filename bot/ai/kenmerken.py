@@ -43,6 +43,20 @@ def vraagsoort(ref: str) -> str:
     return ABSOLUUT if ref == KAS else RELATIEF
 
 
+def basiskans(symbool: str, basiskansen: dict | None) -> float | None:
+    """Hoe vaak het antwoord op de vraag over dit soort symbool 'ja' was (config.yaml, ai.basiskansen)."""
+    if not basiskansen:
+        return None
+    if symbool == "SPY":
+        sleutel = "spy_tegen_kas"
+    elif symbool == "BTC/USDT":
+        sleutel = "btc_tegen_kas"
+    else:
+        sleutel = "crypto_tegen_btc" if is_crypto(symbool) else "aandeel_tegen_spy"
+    waarde = basiskansen.get(sleutel)
+    return None if waarde is None else float(waarde)
+
+
 def _r(x: float | None, d: int = 1) -> float | None:
     return None if x is None else round(x, d)
 
@@ -100,6 +114,7 @@ def tabel(
 
 UITLEG = {
     "referentie": "referentie",
+    "basiskans": "basiskans (hoe vaak het antwoord de afgelopen twee jaar ja was)",
     "vraag": "soort vraag (relatief: tegen de referentie; absoluut: tegen kas)",
     "slotkoers_usd": "slotkoers (dollar)",
     "schommeling_per_dag_28d_pct": "gemiddelde dagbeweging, 28 dagen (%)",

@@ -54,6 +54,11 @@ jobs:
     steps:
       - name: Code ophalen
         uses: actions/checkout@v7
+        with:
+          # Altijd de nieuwste main, ook bij "Re-run jobs" of een run die in de
+          # wachtrij stond. Anders begint zo'n run op de database van voor de
+          # vorige nacht: dan betaalt de AI dubbel en botst het bewaren.
+          ref: main
 
       - name: Python klaarzetten
         uses: actions/setup-python@v7
@@ -132,13 +137,14 @@ jobs:
           done
           test "$gelukt" = ja
 
-      # Alleen als iets anders dan de ronde zelf misging (de ronde stuurt bij
-      # een fout zelf al een bericht).
+      # Bij elke mislukte of afgebroken stap, ook als de ronde op de tijdslimiet
+      # stukliep of het bewaren mislukte. De ronde stuurt bij een eigen fout zelf al
+      # een bericht; een dubbel bericht is beter dan geen.
       - name: Foutmelding naar Telegram
-        if: ${{ failure() && steps.ronde.outcome != 'failure' }}
+        if: ${{ failure() || cancelled() }}
         run: >
           python scripts/meld_fout.py
-          "Een stap buiten de ronde zelf is mislukt (installeren, tests of bewaren)."
+          "De nachtronde is niet goed afgerond (ronde: ${{ steps.ronde.outcome }}). Kijk in het logboek."
           "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
   # Het dashboard publiceren op GitHub Pages (alleen lezen, nep-geld). Een eigen

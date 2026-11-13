@@ -22,7 +22,11 @@ from bot import statistiek
 # Waar elke strategie tegen wordt afgezet. gelijk_alle (gelijk verdeeld over
 # alle symbolen) is de eerlijkste: wint een strategie daar niet van, dan voegde
 # het kiezen niets toe. gelijk_ai bestaat alleen als de AI een deel volgt.
-MEETLATTEN = ("benchmark_spy", "benchmark_btc", "gelijk_alle", "gelijk_ai")
+VERGELIJK_MET = ("benchmark_spy", "benchmark_btc", "gelijk_alle", "gelijk_ai")
+# Alle meetlatten. De twee per soort (aandelen plus ETF's, crypto) dienen alleen
+# voor de vergelijking 'zelfde soort, even belegd'; er wordt niet los tegen vergeleken.
+MEETLATTEN = VERGELIJK_MET + ("gelijk_aandelen", "gelijk_crypto")
+ZELFDE_SOORT = "zelfde soort, even belegd"
 
 
 @dataclass
@@ -185,6 +189,42 @@ def vergelijk_even_belegd(
     return Vergelijking(tegen=meetlat + EVEN_BELEGD, verschil_pp=groei(r_pf) - groei(r_eb), p_waarde=p)
 
 
+def vergelijk_zelfde_soort(con: sqlite3.Connection, pf: str, tot: str, kal: list[str]) -> Vergelijking | None:
+    """Tegen meetlatten van dezelfde soort, even belegd.
+
+    Elke dag: (het deel dat pf gisteren in aandelen en ETF's had) x het rendement van
+    gelijk_aandelen, plus (het deel in crypto) x het rendement van gelijk_crypto, de
+    rest in kas. Een portefeuille die alleen crypto koopt, wordt zo met crypto
+    vergeleken en niet met de hele markt: een voorkeur voor een soort telt dan niet
+    als goed kiezen (review 3). Verkennend; de hoofdvraag blijft 'gelijk_alle, even belegd'.
+    """
+    eigen = {
+        r["datum"]: r for r in con.execute(
+            """SELECT datum, totaal_usd, posities_usd, crypto_usd FROM waarde
+               WHERE portefeuille = ? AND datum <= ? ORDER BY datum""", (pf, tot))
+    }
+    aandelen = {r["datum"]: r["totaal_usd"] for r in _reeks(con, "gelijk_aandelen", tot)}
+    crypto = {r["datum"]: r["totaal_usd"] for r in _reeks(con, "gelijk_crypto", tot)}
+    dagen = [d for d in kal if d in eigen and d in aandelen and d in crypto]
+    if len(dagen) < 2:
+        return None
+    r_pf, r_m = [], []
+    for vorige, d in zip(dagen, dagen[1:]):
+        e = eigen[vorige]
+        if not e["totaal_usd"] or e["crypto_usd"] is None or not aandelen[vorige] or not crypto[vorige]:
+            continue
+        deel_crypto = max(0.0, min(1.0, e["crypto_usd"] / e["totaal_usd"]))
+        deel_aandelen = max(0.0, min(1.0, (e["posities_usd"] - e["crypto_usd"]) / e["totaal_usd"]))
+        r_pf.append(eigen[d]["totaal_usd"] / e["totaal_usd"] - 1.0)
+        r_m.append(deel_aandelen * (aandelen[d] / aandelen[vorige] - 1.0)
+                   + deel_crypto * (crypto[d] / crypto[vorige] - 1.0))
+    if not r_pf:
+        return None
+    groei = lambda r: 100.0 * (float(np.prod([1.0 + x for x in r])) - 1.0)  # noqa: E731
+    return Vergelijking(tegen=ZELFDE_SOORT, verschil_pp=groei(r_pf) - groei(r_m),
+                        p_waarde=statistiek.vergelijk_reeksen(r_pf, r_m))
+
+
 def alle_kerncijfers(con: sqlite3.Connection, cfg: dict, tot: str) -> list[Kerncijfers]:
     kal = kalender(con, cfg)
     namen = [
@@ -199,7 +239,7 @@ def alle_kerncijfers(con: sqlite3.Connection, cfg: dict, tot: str) -> list[Kernc
         if k is None:
             continue
         if not k.is_meetlat:
-            for meetlat in MEETLATTEN:
+            for meetlat in VERGELIJK_MET:
                 if meetlat in namen:
                     v = vergelijk(con, naam, meetlat, tot, kal)
                     if v:
@@ -211,6 +251,9 @@ def alle_kerncijfers(con: sqlite3.Connection, cfg: dict, tot: str) -> list[Kernc
                     v = vergelijk_even_belegd(con, naam, meetlat, tot, kal)
                     if v:
                         k.vergelijkingen.append(v)
+            v = vergelijk_zelfde_soort(con, naam, tot, kal)
+            if v:
+                k.vergelijkingen.append(v)
         uit.append(k)
     return uit
 

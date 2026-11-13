@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS waarde (
     kas_usd      REAL NOT NULL,
     posities_usd REAL NOT NULL,
     totaal_usd   REAL NOT NULL,
+    crypto_usd   REAL,                    -- het deel van posities_usd dat in crypto zit
     PRIMARY KEY (portefeuille, datum)
 );
 
@@ -275,6 +276,7 @@ def verbind(pad: Path | str | None = None) -> sqlite3.Connection:
 LATERE_KOLOMMEN: dict[str, dict[str, str]] = {
     "nieuws": {"opgehaald_op": "TEXT"},
     "wachtrij": {"gewicht": "REAL"},
+    "waarde": {"crypto_usd": "REAL"},
     "koersen": {"dividend": "REAL", "splitsing": "REAL"},
     "posities": {"koopprijs": "REAL", "dividend_usd": "REAL", "koopreden": "TEXT", "bevestigd_op": "TEXT"},
     "ai_kosten": {"model_antwoord": "TEXT", "verzoek_id": "TEXT"},

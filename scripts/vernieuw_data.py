@@ -78,11 +78,16 @@ def main() -> int:
 
     # ---- wisselkoers ----
     print("\nEUR/USD-wisselkoers ophalen...")
-    rijen = mod_wisselkoers.haal_eurusd(
-        cfg["wisselkoers"]["symbool"], start=start_vol, eind=morgen
-    )
-    aantal = database.bewaar_wisselkoersen(con, rijen)
-    print(f"  {aantal} dagen opgeslagen")
+    # Alleen voor de weergave in euro's. Lukt het een nacht niet, dan mag de ronde
+    # daar niet op stuklopen: de laatst bekende koers blijft dan gelden.
+    try:
+        rijen = mod_wisselkoers.haal_eurusd(
+            cfg["wisselkoers"]["symbool"], start=start_vol, eind=morgen
+        )
+        aantal = database.bewaar_wisselkoersen(con, rijen)
+        print(f"  {aantal} dagen opgeslagen")
+    except Exception as fout:  # noqa: BLE001
+        print(f"  LET OP: wisselkoers niet opgehaald ({type(fout).__name__}); de laatst bekende blijft gelden.")
 
     # ---- onaffe dagen weg ----
     weg = database.verwijder_onaffe_dagen(

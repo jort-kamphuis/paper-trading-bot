@@ -85,6 +85,18 @@ def bouw_motor(
             motor.voeg_toe(GelijkVerdeeld("gelijk_alle", aanwezig), aanwezig, gestart_op=begin)
             if deellijst:
                 motor.voeg_toe(GelijkVerdeeld("gelijk_ai", ai_lijst), ai_lijst, gestart_op=begin)
+            # Per soort, over de symbolen waaruit de AI kiest: aandelen plus ETF's, en
+            # crypto. Zo is te zien of een voorsprong komt door het kiezen binnen een
+            # soort, of alleen door een voorkeur voor crypto of juist voor aandelen.
+            from bot.config import is_crypto
+
+            per_soort = {
+                "gelijk_aandelen": [s for s in (ai_lijst or aanwezig) if not is_crypto(s)],
+                "gelijk_crypto": [s for s in (ai_lijst or aanwezig) if is_crypto(s)],
+            }
+            for naam, lijst in per_soort.items():
+                if lijst:
+                    motor.voeg_toe(GelijkVerdeeld(naam, lijst), lijst, gestart_op=begin)
 
     # ---- de AI ----
     if met_ai:

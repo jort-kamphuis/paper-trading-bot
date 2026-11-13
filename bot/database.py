@@ -177,10 +177,15 @@ CREATE TABLE IF NOT EXISTS ai_besluiten (
     gemaakt_op    TEXT NOT NULL,
     -- De voorspelling, voor elk symbool elke nacht, ook bij niets doen. Hierop
     -- wordt later gescoord: klopte de kans? (zie README, de hoofdvraag)
-    kans          REAL,                   -- kans dat het symbool beter doet dan de referentie
+    kans          REAL,                   -- kans dat het antwoord op de vraag ja is
     verwacht_pct  REAL,                   -- verwacht extra rendement in procentpunten
-    referentie    TEXT,                   -- SPY of BTC/USDT
+    referentie    TEXT,                   -- SPY, BTC/USDT, of kas (voor SPY en BTC zelf)
     horizon_dagen INTEGER,                -- over hoeveel kalenderdagen
+    vraag         TEXT,                   -- relatief (tegen SPY of BTC) of absoluut (tegen kas)
+    -- Na de horizon ingevuld door bot/ai/kalibratie.py: wat er echt gebeurde.
+    uitkomst_pct  REAL,                   -- werkelijk (extra) rendement over de horizon, voor kosten
+    geraakt       INTEGER,                -- 1 als dat meer was dan de kosten, anders 0
+    gescoord_op   TEXT,
     UNIQUE (portefeuille, symbool, datum)
 );
 
@@ -272,6 +277,7 @@ LATERE_KOLOMMEN: dict[str, dict[str, str]] = {
     "posities": {"koopprijs": "REAL", "dividend_usd": "REAL", "koopreden": "TEXT", "bevestigd_op": "TEXT"},
     "ai_besluiten": {
         "kans": "REAL", "verwacht_pct": "REAL", "referentie": "TEXT", "horizon_dagen": "INTEGER",
+        "vraag": "TEXT", "uitkomst_pct": "REAL", "geraakt": "INTEGER", "gescoord_op": "TEXT",
     },
 }
 

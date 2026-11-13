@@ -8,17 +8,21 @@ Opzet (naar het idee van TradingAgents, aangepast na de review):
   niet; dat doet de code met vaste regels (config.yaml, ai.beslisregel).
 * ai_enkel doet alles in een aanroep: dezelfde gegevens, dezelfde uitkomst.
 
-De kans gaat altijd over hetzelfde: doet dit symbool de komende 14
-kalenderdagen beter dan zijn referentie (SPY voor aandelen en indexfondsen,
-BTC voor crypto), na ongeveer 0,3% kosten voor kopen en verkopen samen?
-Deze kans wordt voor elk symbool elke beursdag opgeslagen en later gescoord.
+De kans gaat over een van twee vragen, die in elk bericht staat uitgeschreven:
+* relatief (bijna alle symbolen): doet dit symbool de komende 14 kalenderdagen
+  beter dan zijn referentie (SPY voor aandelen en indexfondsen, BTC voor
+  crypto), na ongeveer 0,3% kosten voor kopen en verkopen samen?
+* absoluut (SPY en BTC zelf, die de referentie zijn): stijgt het de komende 14
+  kalenderdagen meer dan die 0,3% kosten? De referentie is dan kas.
+Deze kans wordt voor elk symbool elke beursdag opgeslagen, met de soort vraag,
+en later per soort apart gescoord (bot/ai/kalibratie.py).
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from bot.ai.kenmerken import als_tekst
+from bot.ai.kenmerken import ABSOLUUT, als_tekst
 
 ONDERAAN = (
     "Dit is een oefening met nep-geld. Er wordt nooit echt gehandeld en dit is "
@@ -63,15 +67,17 @@ SCHEMA_KANS = _schema(
         "kans": {
             "type": "number",
             "description": (
-                "0 tot 1: de kans dat dit symbool over de komende 14 kalenderdagen, na 0,3% "
-                "kosten, beter doet dan de referentie. 0,5 betekent: geen idee."
+                "0 tot 1: de kans dat het antwoord op de vraag in het bericht ja is: over de "
+                "komende 14 kalenderdagen, na 0,3% kosten, beter dan de referentie (bij "
+                "referentie kas: meer gestegen dan de kosten). 0,5 betekent: geen idee."
             ),
         },
         "verwacht_extra_rendement_pct": {
             "type": "number",
             "description": (
                 "Het verwachte rendement van dit symbool min dat van de referentie over 14 "
-                "kalenderdagen, in procentpunten, voor kosten. Kan negatief zijn."
+                "kalenderdagen, in procentpunten, voor kosten (bij referentie kas: het "
+                "verwachte rendement zelf). Kan negatief zijn."
             ),
         },
         "onderbouwing": {
@@ -98,15 +104,15 @@ SYSTEEM_NIEUWS = (
 
 SYSTEEM_BULL = (
     "Je bent de optimist in een debat over de komende 14 dagen. Je geeft het "
-    "sterkste eerlijke argument dat dit symbool beter gaat doen dan zijn "
-    "referentie. Je mag niets verzinnen en geen zwak argument opblazen: is de zaak "
+    "sterkste eerlijke argument dat het antwoord op de vraag in het bericht ja is "
+    "(beter dan de referentie, of bij kas: meer stijgen dan de kosten). Je mag niets verzinnen en geen zwak argument opblazen: is de zaak "
     "zwak, zeg dat dan en geef jezelf een lage overtuiging.\n\n" + ONDERAAN
 )
 
 SYSTEEM_BEAR = (
     "Je bent de pessimist in een debat over de komende 14 dagen. Je geeft het "
-    "sterkste eerlijke argument dat dit symbool slechter gaat doen dan zijn "
-    "referentie. Je mag niets verzinnen en geen zwak argument opblazen: is de zaak "
+    "sterkste eerlijke argument dat het antwoord op de vraag in het bericht nee is "
+    "(niet beter dan de referentie, of bij kas: niet meer stijgen dan de kosten). Je mag niets verzinnen en geen zwak argument opblazen: is de zaak "
     "zwak, zeg dat dan en geef jezelf een lage overtuiging.\n\n" + ONDERAAN
 )
 
@@ -122,17 +128,34 @@ _KANS_REGELS = (
 SYSTEEM_RISK = (
     "Je bent de risk manager. Je leest de kengetallen, het nieuws en beide kanten van "
     "het debat, en schat in hoe dit symbool het de komende 14 kalenderdagen doet "
-    "tegenover zijn referentie.\n\n" + _KANS_REGELS + "\n\n" + ONDERAAN
+    "tegenover zijn referentie. De vraag staat in het bericht.\n\n" + _KANS_REGELS + "\n\n" + ONDERAAN
 )
 
 SYSTEEM_ENKEL = (
     "Je bent een nuchtere analist. Je leest de kengetallen en de nieuwskoppen, weegt "
     "zelf de argumenten voor en tegen, en schat in hoe dit symbool het de komende 14 "
-    "kalenderdagen doet tegenover zijn referentie.\n\n" + _KANS_REGELS + "\n\n" + ONDERAAN
+    "kalenderdagen doet tegenover zijn referentie. De vraag staat in het bericht.\n\n" + _KANS_REGELS + "\n\n" + ONDERAAN
 )
 
 
 # ------------------------------------------------------------------ berichten
+
+
+def vraag_tekst(symbool: str, kenmerken: dict) -> str:
+    """De vraag waar de kans over gaat, uitgeschreven."""
+    ref = kenmerken["referentie"]
+    if kenmerken.get("vraag") == ABSOLUUT:
+        return (
+            f"De vraag: stijgt {symbool} de komende 14 kalenderdagen meer dan ongeveer 0,3% "
+            f"kosten? {symbool} is zelf de meetlat van de markt; vergelijken met zichzelf "
+            f"zegt niets, dus de referentie is kas (geld dat niets doet). Het verwachte extra "
+            f"rendement is hier het verwachte rendement van {symbool} zelf."
+        )
+    return (
+        f"De vraag: doet {symbool} het de komende 14 kalenderdagen beter dan {ref}, na "
+        f"ongeveer 0,3% kosten? Het verwachte extra rendement is het rendement van "
+        f"{symbool} min dat van {ref}."
+    )
 
 
 def _koppen_tekst(koppen: list[dict]) -> str:
@@ -180,6 +203,7 @@ def bericht_debat(
         [
             f"Symbool: {symbool}  (referentie: {kenmerken['referentie']})",
             f"Beslisdag: {datum}",
+            vraag_tekst(symbool, kenmerken),
             "",
             "Kengetallen (uitgerekend door de code):",
             als_tekst(kenmerken),
@@ -206,6 +230,7 @@ def bericht_risk(
         [
             f"Symbool: {symbool}  (referentie: {kenmerken['referentie']})",
             f"Beslisdag: {datum}",
+            vraag_tekst(symbool, kenmerken),
             "",
             "Kengetallen (uitgerekend door de code):",
             als_tekst(kenmerken),
@@ -237,6 +262,7 @@ def bericht_enkel(
         [
             f"Symbool: {symbool}  (referentie: {kenmerken['referentie']})",
             f"Beslisdag: {datum}",
+            vraag_tekst(symbool, kenmerken),
             "",
             "Kengetallen (uitgerekend door de code):",
             als_tekst(kenmerken),

@@ -7,6 +7,11 @@ krijgen precies dezelfde getallen.
 Periodes zijn in kalenderdagen, zodat aandelen en crypto over dezelfde periode
 worden gemeten. Elk symbool wordt ook vergeleken met zijn referentie: SPY voor
 aandelen en indexfondsen, BTC voor crypto. Dat is waar de AI tegen voorspelt.
+
+SPY en BTC zelf zijn die referentie. Tegenover zichzelf valt er niets te
+voorspellen, dus voor die twee is de referentie kas: stijgen ze meer dan de
+kosten? Dat is een andere vraag (absoluut in plaats van relatief), en die wordt
+bij elke kans opgeslagen en apart gescoord (bot/ai/kalibratie.py).
 """
 
 from __future__ import annotations
@@ -20,9 +25,22 @@ from bot.markt import Markt
 
 PERIODES = (7, 28, 90, 180)
 
+KAS = "kas"
+# De symbolen die zelf de referentie zijn. Die worden vergeleken met kas.
+MEETLAT_SYMBOLEN = ("SPY", "BTC/USDT")
+
+RELATIEF = "relatief"  # beter dan SPY of BTC
+ABSOLUUT = "absoluut"  # stijgen meer dan de kosten (SPY en BTC zelf)
+
 
 def referentie(symbool: str) -> str:
+    if symbool in MEETLAT_SYMBOLEN:
+        return KAS
     return "BTC/USDT" if is_crypto(symbool) else "SPY"
+
+
+def vraagsoort(ref: str) -> str:
+    return ABSOLUUT if ref == KAS else RELATIEF
 
 
 def _r(x: float | None, d: int = 1) -> float | None:
@@ -43,13 +61,15 @@ def tabel(
     if slot is None:
         return None
     ref = referentie(symbool)
-    t: dict[str, Any] = {"symbool": symbool, "referentie": ref, "slotkoers_usd": round(slot, 4)}
+    t: dict[str, Any] = {
+        "symbool": symbool, "referentie": ref, "vraag": vraagsoort(ref), "slotkoers_usd": round(slot, 4),
+    }
 
     for d in PERIODES:
         eigen = markt.kalender_rendement(symbool, datum, d)
-        tegen = markt.kalender_rendement(ref, datum, d) if ref != symbool else None
+        tegen = markt.kalender_rendement(ref, datum, d) if ref != KAS else None
         t[f"rendement_{d}d_pct"] = _r(eigen)
-        if ref != symbool:
+        if ref != KAS:
             t[f"rendement_{d}d_min_{ref.split('/')[0]}_pct"] = (
                 _r(eigen - tegen) if eigen is not None and tegen is not None else None
             )
@@ -79,6 +99,8 @@ def tabel(
 
 
 UITLEG = {
+    "referentie": "referentie",
+    "vraag": "soort vraag (relatief: tegen de referentie; absoluut: tegen kas)",
     "slotkoers_usd": "slotkoers (dollar)",
     "schommeling_per_dag_28d_pct": "gemiddelde dagbeweging, 28 dagen (%)",
     "afstand_tot_jaarhoog_pct": "afstand tot het hoogste punt van het jaar (%)",

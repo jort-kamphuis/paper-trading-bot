@@ -216,8 +216,15 @@ def maak(
     budget = Budget(con, cfg)
     kosten = f"AI-kosten deze maand: {dollar(budget.uitgegeven(), 2)} van {dollar(budget.max_usd, 2)}."
 
+    # ---- 5. klopten de kansen van de AI? (apart per soort vraag) ----
+    from bot.ai import kalibratie
+
+    heeft_kansen = con.execute("SELECT 1 FROM ai_besluiten WHERE kans IS NOT NULL LIMIT 1").fetchone()
+    kalibratie_tekst = kalibratie.als_tekst(con) if heeft_kansen else ""
+
     tekst = "\n\n".join(
-        [cijfers_tekst, proef_tekst, "\n".join(ai_regels), kosten, "Nep-geld, geen beleggingsadvies."]
+        d for d in [cijfers_tekst, proef_tekst, kalibratie_tekst, "\n".join(ai_regels), kosten,
+                    "Nep-geld, geen beleggingsadvies."] if d
     )
 
     con.execute(

@@ -64,6 +64,9 @@ def test_geen_order_opdrachten():
 
 
 TOEGESTANE_SLEUTELS = {"ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"}
+# Omgevingsvariabelen die geen geheim zijn en dus ook gelezen mogen worden.
+# GITHUB_ACTIONS zet GitHub zelf op "true" als de code op hun servers draait.
+GEEN_GEHEIM = {"GITHUB_ACTIONS"}
 
 
 def test_alleen_bekende_sleutels_worden_gelezen():
@@ -82,7 +85,7 @@ def test_alleen_bekende_sleutels_worden_gelezen():
         gelezen.update(re.findall(r"sleutel\(\s*[\"']([A-Z0-9_]+)[\"']", tekst))
         gelezen.update(re.findall(r"environ(?:\.get)?\(\s*[\"']([A-Z0-9_]+)[\"']", tekst))
         gelezen.update(re.findall(r"environ\[\s*[\"']([A-Z0-9_]+)[\"']\s*\]", tekst))
-    onbekend = gelezen - TOEGESTANE_SLEUTELS
+    onbekend = gelezen - TOEGESTANE_SLEUTELS - GEEN_GEHEIM
     assert not onbekend, f"de bot leest een onbekende sleutel: {sorted(onbekend)}"
 
 

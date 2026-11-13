@@ -88,13 +88,17 @@ ai_watchlist:
   - XRP/USDT
 
 crypto:
-  # Beurzen worden in deze volgorde geprobeerd. Binance weigert verzoeken uit
-  # de VS en de GitHub-servers staan in de VS, dus Kraken en Coinbase staan
-  # erachter als terugval. Alleen publieke koersdata, nooit een sleutel.
+  # Beurzen worden in deze volgorde geprobeerd. Alleen publieke koersdata, nooit
+  # een sleutel. Kraken staat voorop: die heeft alle 8 paren en bedient ook de
+  # VS, waar de GitHub-servers staan. Binance weigert verzoeken uit de VS en
+  # staat daarom achteraan. Coinbase valt af: die mist BNB/USDT en LTC/USDT
+  # (gecontroleerd op 2026-11-13). Lokaal en op GitHub dezelfde bron gebruiken
+  # houdt de koersen gelijk; welke beurs het werd, staat per koers in de kolom
+  # 'bron'.
   beurzen:
-    - binance
     - kraken
-    - coinbase
+    - okx
+    - binance
 
 wisselkoers:
   # Dagelijkse EUR/USD-koers, om dollarkoersen naar euro's te rekenen.

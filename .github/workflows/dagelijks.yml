@@ -1,0 +1,86 @@
+# De nachtelijke ronde van de paper trading-bot. Alles met nep-geld.
+#
+# Wat er gebeurt:
+#   1. pakketten installeren (vaste versies uit requirements.txt)
+#   2. de tests draaien: slaagt er een niet, dan wordt er die nacht niet gehandeld
+#   3. de dagelijkse ronde, met een bericht naar Telegram
+#   4. de database klein maken en terugzetten in de repository
+#
+# Deze repository is openbaar, dus GitHub Actions kost hier niets.
+
+name: Dagelijkse ronde
+
+on:
+  schedule:
+    # 00:30 UTC. De Amerikaanse beurs is dan dicht (ook in de zomer) en de
+    # cryptodag van gisteren is af. In Nederland is dat 01:30 (winter) of
+    # 02:30 (zomer). GitHub start geplande taken soms wat later; dat geeft niet.
+    - cron: "30 0 * * *"
+  # Zo kun je hem ook zelf starten, via het tabblad Actions.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Nooit twee rondes tegelijk.
+concurrency:
+  group: dagelijkse-ronde
+  cancel-in-progress: false
+
+jobs:
+  ronde:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+    steps:
+      - name: Code ophalen
+        uses: actions/checkout@v7
+
+      - name: Python klaarzetten
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Pakketten installeren
+        run: pip install -r requirements.txt
+
+      - name: Tests
+        run: python -m pytest tests -q
+
+      - name: Dagelijkse ronde
+        id: ronde
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python scripts/dagelijks.py --telegram
+
+      # Ook na een mislukte ronde: de AI-kosten en -beslissingen zijn per symbool
+      # vastgelegd. Gooi je die weg, dan betaalt de bot morgen opnieuw voor
+      # hetzelfde. Elke dag gaat in een keer of niet, dus de database is nooit
+      # half bijgewerkt.
+      - name: Database bewaren
+        if: ${{ always() && (steps.ronde.outcome == 'success' || steps.ronde.outcome == 'failure') }}
+        run: |
+          python scripts/slank_maken.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/trading.db
+          if git diff --cached --quiet; then
+            echo "Database niet veranderd."
+            exit 0
+          fi
+          git commit -m "Dagelijkse ronde $(date -u +%Y-%m-%d)"
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      # Alleen als iets anders dan de ronde zelf misging (de ronde stuurt bij
+      # een fout zelf al een bericht).
+      - name: Foutmelding naar Telegram
+        if: ${{ failure() && steps.ronde.outcome != 'failure' }}
+        run: >
+          python scripts/meld_fout.py
+          "Een stap buiten de ronde zelf is mislukt (installeren, tests of bewaren)."
+          "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

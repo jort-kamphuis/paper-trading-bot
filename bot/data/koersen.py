@@ -131,7 +131,7 @@ def haal_crypto(
     Probeert de beurzen in de opgegeven volgorde en gebruikt de eerste die
     antwoordt. Geeft de rijen terug plus per paar de beurs die het leverde.
     """
-    beurzen = beurzen or ["binance", "kraken", "coinbase"]
+    beurzen = beurzen or ["kraken", "okx", "binance"]
     if not paren:
         return [], {}
 
@@ -178,14 +178,25 @@ def haal_crypto(
     return rijen, gebruikt
 
 
+MAX_PAGINAS = 40
+
+
 def _haal_alle_bars(beurs, paar: str, sinds_ms: int, limiet: int = 1000) -> list[list]:
-    """Haal dagbars op en blader door, want een beurs geeft er maar een paar honderd per keer."""
+    """Haal dagbars op en blader door tot vandaag.
+
+    Elke beurs geeft een ander aantal dagen per keer (Kraken 720, OKX 300). We
+    bladeren dus door tot er niets nieuws meer komt of tot we bij vandaag zijn.
+    Stoppen omdat een pagina "klein" was, is fout: dan mis je bij een beurs met
+    kleine pagina's juist de meest recente dagen.
+    """
     alles: list[list] = []
     cursor = sinds_ms
     dag_ms = 24 * 60 * 60 * 1000
     nu_ms = int(time.time() * 1000)
 
-    while cursor < nu_ms:
+    for _ in range(MAX_PAGINAS):
+        if cursor >= nu_ms:
+            break
         bars = beurs.fetch_ohlcv(paar, timeframe="1d", since=cursor, limit=limiet)
         if not bars:
             break
@@ -197,8 +208,6 @@ def _haal_alle_bars(beurs, paar: str, sinds_ms: int, limiet: int = 1000) -> list
         if laatste <= cursor:
             break
         cursor = laatste + dag_ms
-        if len(nieuw) < limiet // 2:
-            break
 
     # dubbele dagen eruit, op datum sorteren
     per_dag = {b[0]: b for b in alles}

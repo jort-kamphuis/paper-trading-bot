@@ -363,6 +363,52 @@ def test_de_nieuwsanalist_krijgt_geen_toekomstig_nieuws_te_zien(con, cfg_ai, mar
     assert [k["titel"] for k in gezien] == ["gewoon nieuws"], "de opgeslagen koppen moeten kloppen"
 
 
+def test_crypto_ziet_geen_nieuws_van_na_middernacht():
+    """De order gaat af op de opening van 00:00 UTC; later nieuws kon die koers niet raken."""
+    from bot.ai.ronde import nieuws_grens
+
+    # De bot draait om 00:47 UTC (GitHub start vaak wat later dan gepland).
+    nu = datetime(2026, 11, 14, 0, 47, tzinfo=timezone.utc)
+    assert nieuws_grens("BTC/USDT", "2026-11-13", nu=nu) == "2026-11-14T00:00:00+00:00"
+
+
+def test_aandelen_mogen_nieuws_tot_het_draaimoment_zien():
+    from bot.ai.ronde import nieuws_grens
+
+    nu = datetime(2026, 11, 14, 0, 47, tzinfo=timezone.utc)
+    # De beurs opent pas om 13:30 UTC of later, dus alles tot nu is op tijd.
+    assert nieuws_grens("AAPL", "2026-11-13", nu=nu) == nu.isoformat()
+
+
+def test_aandelen_nooit_nieuws_van_na_de_opening():
+    """Zou de bot pas middags draaien, dan telt nieuws van na de opening niet mee."""
+    from bot.ai.ronde import nieuws_grens
+
+    laat = datetime(2026, 11, 14, 18, 0, tzinfo=timezone.utc)
+    assert nieuws_grens("AAPL", "2026-11-13", nu=laat) == "2026-11-14T13:30:00+00:00"
+
+
+def test_de_grens_wordt_per_besluit_opgeslagen(con, cfg_ai):
+    datums = werkdagen(130)
+    markt = maak_markt({"BTC/USDT": [100.0 + i for i in range(130)]}, datums)
+    datum = datums[-1]
+    _maak_pf(con)
+    mod_nieuws.bewaar(
+        con,
+        [
+            {**_kop("voor middernacht", f"{datum}T22:00:00+00:00"), "symbool": "BTC/USDT"},
+            {**_kop("na middernacht", f"{datum}T23:59:59+00:00"), "symbool": "BTC/USDT"},
+        ],
+    )
+    client = NepClient(Budget(con, cfg_ai, vandaag=datum), KOOP_ZEKER)
+    denk_na(con, cfg_ai, client, markt, "ai_analist", datum, ["BTC/USDT"], stil=True)
+    rij = con.execute("SELECT nieuws_tot FROM ai_besluiten").fetchone()
+    from datetime import date as _d, timedelta as _td
+
+    volgende = (_d.fromisoformat(datum) + _td(days=1)).isoformat()
+    assert rij["nieuws_tot"] == f"{volgende}T00:00:00+00:00"
+
+
 def test_de_backtest_krijgt_nooit_een_ai_portefeuille(con, cfg_ai, vaste_wisselkoers):
     from bot.opzet import bouw_motor
 

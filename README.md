@@ -14,7 +14,7 @@ geen aanbeveling om iets te kopen of te verkopen.
 
 ---
 
-## Wat er nu klaar is (stap 3 van 6)
+## Wat er nu klaar is (stap 4 van 6)
 
 | Onderdeel | Status |
 |---|---|
@@ -28,10 +28,89 @@ geen aanbeveling om iets te kopen of te verkopen.
 | Overzicht van de stand | klaar |
 | AI-analist (Claude), met controleportefeuille | klaar, wacht op je API-key |
 | Kostenmeting en maandprognose van de AI | klaar |
-| Automatisch draaien via GitHub Actions | stap 4 |
-| Telegram-meldingen | stap 4 |
+| Elke nacht automatisch draaien via GitHub Actions | klaar, wacht op je Secrets |
+| Dagelijks bericht via Telegram | klaar, wacht op je bot |
 | Weekrapport en challenger | stap 5 |
 | Streamlit-dashboard | stap 6 |
+
+---
+
+## Automatisch draaien: wat jij eenmalig doet
+
+De bot draait elke nacht om **00:30 UTC** (01:30 in de winter, 02:30 in de
+zomer) vanzelf op GitHub. Daarvoor moet je drie dingen eenmalig regelen.
+
+### 1. Een Telegram-bot aanmaken
+
+1. Open Telegram en zoek **@BotFather** (let op het blauwe vinkje).
+2. Stuur `/newbot` en volg wat BotFather vraagt: eerst een naam, daarna een
+   gebruikersnaam die op `bot` eindigt.
+3. Je krijgt een sleutel (een lange code met een dubbele punt erin). Zet die in
+   `.env`, achter `TELEGRAM_BOT_TOKEN=`. Plak hem nergens anders.
+4. Zoek je nieuwe bot op in Telegram en stuur hem een berichtje, bijvoorbeeld
+   `hoi`. Pas dan kan hij jouw chat vinden.
+5. Draai:
+
+```bash
+.venv\Scripts\python.exe scripts\telegram_instellen.py
+```
+
+Dat zoekt je chat-id op, vraagt of het die in `.env` mag zetten, en stuurt een
+testbericht.
+
+### 2. De sleutels naar GitHub
+
+De nachtelijke ronde draait op GitHub en kan niet bij je `.env`. De sleutels
+moeten daar dus als **Secret** staan. Als `.env` helemaal is ingevuld:
+
+```bash
+.venv\Scripts\python.exe scripts\zet_github_secrets.py
+```
+
+Dat zet de drie sleutels bij de repository, met het account jort-kamphuis. De
+waarden worden nergens getoond, en op GitHub kan niemand ze meer uitlezen, ook
+jij niet; je kunt ze alleen vervangen.
+
+### 3. De eerste ronde starten
+
+Daarna draait hij elke nacht vanzelf. Wil je niet wachten, start hem dan zelf:
+
+```bash
+gh workflow run dagelijks.yml --repo jort-kamphuis/paper-trading-bot
+```
+
+Of op GitHub: tabblad **Actions**, dan **Dagelijkse ronde**, dan **Run workflow**.
+
+### Wat er elke nacht gebeurt
+
+1. De tests draaien. Slaagt er een niet, dan wordt er die nacht niet gehandeld
+   en krijg je een melding.
+2. De koersen worden opnieuw opgehaald, alleen van dagen die af zijn.
+3. De motor voert de orders van gisteren uit en de strategieën beslissen.
+4. De AI-analist denkt na over de nieuwste dag.
+5. Je krijgt een kort bericht in Telegram, zonder geluid.
+6. De database wordt klein gemaakt en terug in de repository gezet. Zo blijven
+   de resultaten bewaard. Je ziet dat als een commit "Dagelijkse ronde".
+
+Gaat er iets mis, dan krijg je een bericht in Telegram met een link naar het
+logboek op GitHub.
+
+### Vanaf nu lokaal alleen kijken
+
+Zodra de meting op GitHub draait, is de database op GitHub de echte. Lokaal haal
+je de laatste stand op en kijk je:
+
+```bash
+git pull
+```
+
+```bash
+.venv\Scripts\python.exe scripts\stand.py --trades
+```
+
+`dagelijks.py` weigert dan lokaal te draaien. Anders zou je lokale kopie een
+andere meting worden en botst het bij de volgende `git pull`. De backtest heeft
+een eigen database (`data/backtest.db`) en kan dus gewoon lokaal.
 
 ---
 
@@ -69,7 +148,8 @@ meting: elke portefeuille krijgt €1.000 nep-geld.
 .venv\Scripts\python.exe scripts\stand.py --trades
 ```
 
-**5. De backtest draaien** (mag, maar is geen bewijs; zie verderop):
+**5. De backtest draaien** (mag, maar is geen bewijs; zie verderop). De eerste
+keer haalt hij zijn eigen koersen op; met `--vernieuw` doet hij dat opnieuw:
 
 ```bash
 .venv\Scripts\python.exe scripts\backtest.py
@@ -300,9 +380,11 @@ paper-trading-bot/
 ├── config.yaml              alle instellingen en de watchlists
 ├── .env.example             voorbeeld voor je sleutels (.env gaat nooit in git)
 ├── requirements.txt
+├── .github/workflows/
+│   └── dagelijks.yml        de nachtelijke ronde op GitHub
 ├── data/
-│   ├── trading.db           de echte database
-│   └── backtest.db          de uitkomst van de laatste backtest
+│   ├── trading.db           de echte database (in git, bijgewerkt door GitHub)
+│   └── backtest.db          de backtest, met eigen koersen (niet in git)
 ├── bot/
 │   ├── config.py            instellingen inlezen
 │   ├── database.py          de tabellen
@@ -312,7 +394,8 @@ paper-trading-bot/
 │   ├── motor.py             laat alles dag na dag draaien
 │   ├── statistiek.py        rendement, risico en "is dit al iets?"
 │   ├── opzet.py             zet alle strategieën klaar
-│   ├── overzicht.py         teksten over de stand (ook voor Telegram)
+│   ├── overzicht.py         teksten over de stand, ook het Telegram-bericht
+│   ├── telegram.py          berichten naar Telegram
 │   ├── data/                koersen, wisselkoers en nieuws ophalen
 │   ├── strategieen/         de strategieën en de meetlat
 │   └── ai/                  de AI-analist
@@ -328,8 +411,12 @@ paper-trading-bot/
 │   ├── stand.py             laat zien hoe het ervoor staat
 │   ├── ai_kosten.py         wat de AI echt kost
 │   ├── backtest.py          de backtest
-│   └── herstart_meting.py   opnieuw beginnen (wist alles)
-└── tests/                   96 tests
+│   ├── herstart_meting.py   opnieuw beginnen (wist alles)
+│   ├── telegram_instellen.py  chat-id vinden en testbericht sturen
+│   ├── zet_github_secrets.py  sleutels uit .env naar GitHub Secrets
+│   ├── slank_maken.py       database klein maken voor git (door GitHub)
+│   └── meld_fout.py         foutmelding naar Telegram (door GitHub)
+└── tests/                   119 tests
 ```
 
 ### Wanneer begint de meting
@@ -359,3 +446,10 @@ later van start dan de rest. Nu beginnen ze allemaal tegelijk.
   een logregel of foutmelding kan belanden.
 * **Vaste versies.** `requirements.txt` legt de versie van elk pakket vast,
   zodat een update halverwege de meting niet ongemerkt iets verandert.
+* **De Telegram-sleutel zit in elk internetadres van Telegram.** Een
+  foutmelding van de verbinding noemt dat adres vaak letterlijk, en de
+  logboeken van deze openbare repository zijn ook openbaar. De bot haalt de
+  sleutel daarom uit elke foutmelding voordat die wordt getoond.
+* **Crypto via Kraken.** Kraken heeft alle 8 paren en bedient ook de VS, waar
+  de GitHub-servers staan. Lokaal en op GitHub komt de crypto dus van dezelfde
+  beurs. Welke beurs een koers leverde, staat per koers in de kolom `bron`.

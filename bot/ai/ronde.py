@@ -100,6 +100,30 @@ def _zet_order_klaar(con: sqlite3.Connection, pf: str, besluit: Besluit) -> None
     )
 
 
+def nieuws_grens(symbool: str, datum: str, nu: datetime | None = None) -> str:
+    """Tot welk moment de AI nieuws mag zien voor een besluit over 'datum'.
+
+    Een besluit van dag D wordt uitgevoerd op de openingskoers van de volgende
+    handelsdag. Nieuws dat na die opening verscheen, kon de koers op dat moment
+    nog niet beïnvloeden. Wie het toch meeweegt, kijkt vooruit. De grens is
+    dus het vroegste van: nu, of de opening waarop het besluit wordt uitgevoerd.
+
+    * Crypto: de volgende dag begint om 00:00 UTC. De bot draait daarna (rond
+      00:30 UTC, soms later), dus zonder deze grens zou nieuws van na middernacht
+      meetellen terwijl de order al op de middernachtkoers afgaat.
+    * Aandelen: de Amerikaanse beurs opent op zijn vroegst om 13:30 UTC (in de
+      zomer). Dat ligt altijd na het moment waarop de bot draait.
+    """
+    from datetime import timedelta
+
+    from bot.config import is_crypto
+
+    nu = nu or datetime.now(timezone.utc)
+    volgende = datetime.fromisoformat(datum).replace(tzinfo=timezone.utc) + timedelta(days=1)
+    opening = volgende if is_crypto(symbool) else volgende.replace(hour=13, minute=30)
+    return min(nu, opening).isoformat()
+
+
 def denk_na(
     con: sqlite3.Connection,
     cfg: dict,
@@ -114,7 +138,9 @@ def denk_na(
 ) -> Uitkomst:
     """Laat de AI-analist voor een portefeuille en een dag beslissen."""
     uitkomst = Uitkomst(portefeuille=portefeuille, datum=datum)
-    nieuws_tot = nieuws_tot or datetime.now(timezone.utc).isoformat()
+    # 'nieuws_tot' is een extra bovengrens (handig in tests). De echte grens
+    # wordt per symbool bepaald door nieuws_grens().
+    plafond = datetime.fromisoformat(nieuws_tot) if nieuws_tot else None
 
     pf = Portefeuille.uit_database(con, portefeuille, cfg["algemeen"])
     if pf is None:
@@ -135,6 +161,7 @@ def denk_na(
             continue
 
         heeft_positie = symbool in pf.posities
+        grens = nieuws_grens(symbool, datum, nu=plafond)
         try:
             besluit = analist.beslis(
                 symbool=symbool,
@@ -143,7 +170,7 @@ def denk_na(
                 heeft_positie=heeft_positie,
                 kas_eur=vrije_kas,
                 max_per_trade_eur=max_per_trade,
-                nieuws_tot=nieuws_tot,
+                nieuws_tot=grens,
             )
         except BudgetOp as fout:
             # Wat al is uitgegeven, staat geboekt. Dat moet bewaard blijven.
@@ -168,7 +195,7 @@ def denk_na(
             continue
 
         fouten_achter_elkaar = 0
-        _bewaar_besluit(con, portefeuille, besluit, nieuws_tot)
+        _bewaar_besluit(con, portefeuille, besluit, grens)
         if besluit.actie in ("KOOP", "VERKOOP"):
             _zet_order_klaar(con, portefeuille, besluit)
             if besluit.actie == "KOOP":

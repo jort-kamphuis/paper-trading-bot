@@ -13,8 +13,9 @@ __pycache__/
 data/cache/
 *.log
 
-# Databases blijven voorlopig lokaal. De koershistorie is bijna 5 MB en zou de
-# repository elke dag met dat formaat laten groeien. In stap 4 komt er een
-# kleine database met alleen de resultaten (trades, posities, waardes) die wel
-# wordt bewaard; de koersen worden dan bij elke run opnieuw opgehaald.
-data/*.db
+# De echte database (data/trading.db) staat wel in git: zo blijven de resultaten
+# bewaard. GitHub Actions maakt hem na elke ronde klein (scripts/slank_maken.py),
+# want de koersen worden elke nacht toch opnieuw opgehaald.
+# De backtest is een wegwerpbestand en blijft lokaal.
+data/backtest.db
+data/*.db-journal

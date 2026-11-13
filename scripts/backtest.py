@@ -56,38 +56,36 @@ def _resultaten(con, portefeuille: str) -> list[float]:
 def main() -> int:
     p = argparse.ArgumentParser(description="Backtest van de regelstrategieën")
     p.add_argument("--jaren", type=float, default=None, help="hoeveel jaar terug")
-    p.add_argument("--db", default=None, help="database met de koersen")
+    # (de koersen staan in data/backtest.db; met --vernieuw worden ze opnieuw opgehaald)
+    p.add_argument("--vernieuw", action="store_true", help="de koersen opnieuw ophalen")
     args = p.parse_args()
 
     cfg = conf.laad()
     jaren = args.jaren if args.jaren is not None else cfg["backtest"]["jaren_terug"]
 
-    # De koersen staan in de gewone database; de uitkomst van de backtest komt
-    # in een eigen bestand, zodat de echte resultaten nooit vervuild raken.
-    bron = database.verbind(args.db)
+    # De backtest heeft een eigen database, met eigen koersen. De echte
+    # database (data/trading.db) staat in git en wordt alleen door de
+    # nachtelijke ronde op GitHub bijgewerkt. Zou de backtest daar koersen in
+    # zetten, dan botst dat bij de volgende 'git pull'.
     doel_pad = conf.PROJECT / "data" / "backtest.db"
-    if doel_pad.exists():
-        doel_pad.unlink()
     con = database.verbind(doel_pad)
+    heeft_koersen = con.execute("SELECT COUNT(*) n FROM koersen").fetchone()["n"] > 0
+    if args.vernieuw or not heeft_koersen:
+        print("Koersen voor de backtest ophalen (eenmalig, ongeveer een minuut)...")
+        import subprocess
 
-    # Koersen en wisselkoersen overnemen.
-    for rij in bron.execute("SELECT * FROM koersen"):
-        con.execute(
-            """INSERT OR REPLACE INTO koersen
-               (symbool, datum, open, hoog, laag, slot, volume, valuta, bron)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
-            (
-                rij["symbool"], rij["datum"], rij["open"], rij["hoog"], rij["laag"],
-                rij["slot"], rij["volume"], rij["valuta"], rij["bron"],
-            ),
+        subprocess.run(
+            [
+                sys.executable,
+                str(Path(__file__).resolve().parent / "vernieuw_data.py"),
+                "--jaren", str(max(3.0, float(jaren) + 1.0)),
+                "--db", str(doel_pad),
+            ],
+            check=True,
         )
-    for rij in bron.execute("SELECT * FROM wisselkoersen"):
-        con.execute(
-            "INSERT OR REPLACE INTO wisselkoersen (datum, eurusd) VALUES (?,?)",
-            (rij["datum"], rij["eurusd"]),
-        )
-    con.commit()
-    bron.close()
+        con.close()
+        con = database.verbind(doel_pad)
+        print()
 
     markt = Markt.uit_database(con)
     if not markt.datums:

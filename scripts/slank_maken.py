@@ -30,7 +30,10 @@ def maak_slank(con, kalender_symbool: str) -> int:
         "DELETE FROM koersen WHERE symbool != ?", (kalender_symbool,)
     ).rowcount
     con.commit()
-    con.execute("VACUUM")
+    # Alleen opruimen als er iets is weggehaald. VACUUM herschrijft het bestand,
+    # en dan lijkt het voor git elke nacht veranderd, ook als er niets gebeurde.
+    if weg:
+        con.execute("VACUUM")
     return weg
 
 

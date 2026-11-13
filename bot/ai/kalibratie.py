@@ -116,19 +116,55 @@ class Score:
     # Wie altijd de basiskans zegt (hoe vaak het uitkwam), scoort dit. Een AI die
     # iets weet, zit daar onder; onder 0,25 zitten zegt alleen dat hij de basiskans kent.
     brier_basiskans: float = BRIER_GEEN_IDEE
+    beslisdagen: int = 0
+    p_beter_dan_basiskans: float | None = None
 
 
-def scores(con: sqlite3.Connection) -> list[Score]:
+def venster(cfg: dict) -> tuple[str | None, str | None]:
+    """Welke beslisdagen meetellen: in de echte meting alleen die van start tot en met einde."""
+    if cfg.get("modus") != "echt":
+        return None, None
+    m = cfg.get("meting") or {}
+    return (str(m["start"]) if m.get("start") else None, str(m["einde"]) if m.get("einde") else None)
+
+
+def toets_tegen_basiskans(per_dag: dict[str, list[tuple[float, int]]], blok: int = 10) -> float | None:
+    """Is de Brier-score beter dan 'altijd de basiskans zeggen'? Eenzijdige p-waarde.
+
+    Per beslisdag het gemiddelde verschil (Brier van de basiskans min Brier van de
+    AI); daarop dezelfde toets op blokgemiddelden als bij de hoofdvraag. Per dag en
+    in blokken, omdat kansen van dezelfde dag en van opeenvolgende dagen over
+    overlappende periodes gaan en dus niet los van elkaar staan. Verkennend.
+    """
+    from bot import statistiek
+
+    alle = [x for lijst in per_dag.values() for x in lijst]
+    if not alle:
+        return None
+    basis = sum(g for _, g in alle) / len(alle)
+    reeks = [
+        sum((basis - g) ** 2 - (k - g) ** 2 for k, g in per_dag[d]) / len(per_dag[d])
+        for d in sorted(per_dag)
+    ]
+    return statistiek.blokgemiddelden_p_waarde(reeks, blok=blok)
+
+
+def scores(con: sqlite3.Connection, van: str | None = None, tot: str | None = None) -> list[Score]:
     rijen = con.execute(
         """SELECT portefeuille, COALESCE(vraag, CASE WHEN referentie = ? THEN ? ELSE ? END) AS vraag,
-                  kans, geraakt
+                  kans, geraakt, datum
            FROM ai_besluiten WHERE gescoord_op IS NOT NULL AND kans IS NOT NULL
+             AND datum >= COALESCE(?, datum) AND datum <= COALESCE(?, datum)
            ORDER BY portefeuille""",
-        (KAS, ABSOLUUT, RELATIEF),
+        (KAS, ABSOLUUT, RELATIEF, van, tot),
     ).fetchall()
     groepen: dict[tuple[str, str], list[tuple[float, int]]] = {}
+    per_dag: dict[tuple[str, str], dict[str, list[tuple[float, int]]]] = {}
     for r in rijen:
-        groepen.setdefault((r["portefeuille"], r["vraag"]), []).append((float(r["kans"]), int(r["geraakt"])))
+        sleutel = (r["portefeuille"], r["vraag"])
+        paar = (float(r["kans"]), int(r["geraakt"]))
+        groepen.setdefault(sleutel, []).append(paar)
+        per_dag.setdefault(sleutel, {}).setdefault(r["datum"], []).append(paar)
     uit: list[Score] = []
     for (pf, vraag), paren in sorted(groepen.items(), key=lambda x: (x[0][0], x[0][1] != RELATIEF)):
         n = len(paren)
@@ -145,13 +181,17 @@ def scores(con: sqlite3.Connection) -> list[Score]:
             kwam_uit_pct=100.0 * sum(g for _, g in paren) / n,
             vakken=vakken,
             brier_basiskans=(lambda f: f * (1.0 - f))(sum(g for _, g in paren) / n),
+            beslisdagen=len(per_dag[(pf, vraag)]),
+            # Alleen voor de relatieve vraag. De absolute (SPY en BTC) heeft te weinig
+            # onafhankelijke waarnemingen voor een toets: die wordt alleen getoond.
+            p_beter_dan_basiskans=toets_tegen_basiskans(per_dag[(pf, vraag)]) if vraag == RELATIEF else None,
         ))
     return uit
 
 
-def als_tekst(con: sqlite3.Connection) -> str:
+def als_tekst(con: sqlite3.Connection, van: str | None = None, tot: str | None = None) -> str:
     regels = ["Klopten de kansen van de AI? (verkennend)"]
-    lijst = scores(con)
+    lijst = scores(con, van, tot)
     if not lijst:
         open_ = con.execute(
             "SELECT COUNT(*) n FROM ai_besluiten WHERE kans IS NOT NULL AND gescoord_op IS NULL"
@@ -175,6 +215,14 @@ def als_tekst(con: sqlite3.Connection) -> str:
             f"(basiskans {getal(s.brier_basiskans, 3)}), "
             f"gemiddelde kans {getal(s.gemiddelde_kans, 2)}, kwam uit in {getal(s.kwam_uit_pct, 0)}%"
         )
+        if s.vraag == RELATIEF:
+            p = s.p_beter_dan_basiskans
+            regels.append(
+                f"      beter dan de basiskans? {s.beslisdagen} beslisdagen, "
+                + ("nog te weinig voor de toets" if p is None else f"p {getal(p, 2)} (verkennend)")
+            )
+        else:
+            regels.append("      alleen ter informatie: te weinig onafhankelijke waarnemingen voor een conclusie")
         for naam, n, kans, uit in s.vakken:
             regels.append(f"      kans {naam}: {n}x, gemiddeld {getal(kans, 2)}, kwam uit in {getal(uit, 0)}%")
     return "\n".join(regels)

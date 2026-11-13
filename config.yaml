@@ -152,12 +152,16 @@ ai:
   # Het plafond per antwoord. Een vangnet, geen kostenknop: je betaalt voor wat
   # het model echt schrijft. Denkwerk telt hier ook in mee; te krap betekent een
   # afgekapt, onbruikbaar antwoord waar je wel voor betaalde.
+  # Gelijk aan de proefweek, zodat een afkapping daar ook in de meting zichtbaar was.
   max_tokens:
-    nieuws: 1500
-    bull:   3000
-    bear:   3000
-    risk:   4000
-    enkel:  4000
+    nieuws: 4000
+    bull:   4000
+    bear:   4000
+    risk:   6000
+    enkel:  6000
+
+  # Een afgekapt, geweigerd of onleesbaar antwoord wordt zo vaak opnieuw gevraagd.
+  herkansingen: 1
 
   denkwerk:
     nieuws: {denken: uit, inspanning: low}
@@ -165,6 +169,19 @@ ai:
     bear:   {denken: aan, inspanning: low}
     risk:   {denken: aan, inspanning: medium}
     enkel:  {denken: aan, inspanning: medium}
+
+  # De basiskans per soort vraag: hoe vaak het antwoord 'ja' was, zonder enige
+  # kennis. Het model krijgt dit te zien als anker (in plaats van 0,5), zodat het
+  # bij twijfel de basiskans geeft. Gemeten met de scoorfunctie van de bot zelf
+  # (bot/ai/kalibratie.py: vanaf de opening na de beslisdag, 14 kalenderdagen, na
+  # 0,3% kosten) op alle beursdagen van 2024-11-12 tot 2026-10-28:
+  # aandelen en ETF's tegen SPY 46,5%, crypto tegen BTC 38,5%, SPY tegen kas
+  # 53,2%, BTC tegen kas 45,2%. Vastgelegd voor de start van de meting.
+  basiskansen:
+    aandeel_tegen_spy: 0.46
+    crypto_tegen_btc:  0.38
+    spy_tegen_kas:     0.53
+    btc_tegen_kas:     0.45
 
   # De beslisregel. Het model geeft per symbool een kans en een verwacht extra
   # rendement; de CODE beslist. Vastgelegd voor de start van de meting.
@@ -174,6 +191,7 @@ ai:
     koop_verwacht_pct: 0.5      # ... en een verwacht extra rendement van 0,5% of meer
     verkoop_kans_onder: 0.50    # verkopen als de kans onder 0,50 zakt
     houdtijd_kalenderdagen: 14  # na 14 dagen verkopen, tenzij opnieuw bevestigd
+    max_crypto: 2               # hooguit 2 cryptoposities tegelijk (zoals mean reversion)
 
   # Een vaste pauze tussen twee aanroepen, in seconden. Standaard 0 (uit). Zet
   # dit hoger als het account te veel verzoeken per minuut weigert (fout 429).

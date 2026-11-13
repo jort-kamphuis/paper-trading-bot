@@ -177,6 +177,14 @@ def _overzicht(con: sqlite3.Connection, cfg: dict, weergave: str, vandaag: date)
     beide = ai_pf in bestaand and meetlat in bestaand
     v = rapport.vergelijk_even_belegd(con, ai_pf, meetlat, tot_vraag, kal) if beide else None
     ruw = rapport.vergelijk(con, ai_pf, meetlat, tot_vraag, kal) if beide else None
+    soort = rapport.vergelijk_zelfde_soort(con, ai_pf, tot_vraag, kal) if ai_pf in bestaand else None
+    # De handelskosten van de AI in procentpunten van het startbedrag: een 'nee' kan
+    # ook betekenen 'goed gekozen, te vaak gehandeld'. De meetlat betaalt geen kosten.
+    rij = con.execute(
+        """SELECT COALESCE(SUM(t.kosten_usd), 0) k, MAX(p.start_kapitaal) s
+           FROM portefeuilles p LEFT JOIN trades t ON t.portefeuille = p.naam AND t.datum <= ?
+           WHERE p.naam = ?""", (tot_vraag, ai_pf)).fetchone()
+    kosten_pp = _getal(100.0 * rij["k"] / rij["s"], 2) if rij and rij["s"] else None
     k_ai = rapport.kerncijfers(con, cfg, ai_pf, tot_vraag, kal) if ai_pf in bestaand else None
     k_m = rapport.kerncijfers(con, cfg, meetlat, tot_vraag, kal) if meetlat in bestaand else None
     uit["hoofdvraag"] = {
@@ -191,6 +199,9 @@ def _overzicht(con: sqlite3.Connection, cfg: dict, weergave: str, vandaag: date)
         "p_waarde": _getal(v.p_waarde, 3) if v else None,
         "ruw_verschil_pp": _getal(ruw.verschil_pp, 2) if ruw else None,
         "ruw_p_waarde": _getal(ruw.p_waarde, 3) if ruw else None,
+        "soort_verschil_pp": _getal(soort.verschil_pp, 2) if soort else None,
+        "soort_p_waarde": _getal(soort.p_waarde, 3) if soort else None,
+        "ai_kosten_pp": kosten_pp,
         "start": str(m.get("start", "")),
         "einde": einde.isoformat(),
         "dagen_tot_einde": max(0, (einde - vandaag).days),
@@ -234,16 +245,22 @@ def _vraag_van(rij: sqlite3.Row) -> str:
     return rij["vraag"] or vraagsoort(rij["referentie"] or "")
 
 
-def _kansen(con: sqlite3.Connection, cfg: dict) -> dict:
+def _kansen(con: sqlite3.Connection, cfg: dict, weergave: str = "proef") -> dict:
     horizon = int(cfg["ai"]["beslisregel"]["horizon_kalenderdagen"])
+    # In de echte meting tellen alleen de kansen van de start tot en met de einddatum.
+    m = cfg.get("meting") or {}
+    van, tot = (str(m.get("start") or ""), str(m.get("einde") or "9999")) if weergave == "echt" else ("", "9999")
     rijen = con.execute(
-        "SELECT portefeuille, datum, kans, referentie, vraag, geraakt, gescoord_op FROM ai_besluiten WHERE kans IS NOT NULL"
+        """SELECT portefeuille, datum, kans, referentie, vraag, geraakt, gescoord_op FROM ai_besluiten
+           WHERE kans IS NOT NULL AND datum >= ? AND datum <= ?""", (van, tot)
     ).fetchall()
     groepen: dict[tuple[str, str], dict] = {}
     for r in rijen:
-        g = groepen.setdefault((r["portefeuille"], _vraag_van(r)), {"gescoord": [], "open": []})
+        g = groepen.setdefault((r["portefeuille"], _vraag_van(r)), {"gescoord": [], "open": [], "per_dag": {}})
         if r["gescoord_op"]:
-            g["gescoord"].append((float(r["kans"]), int(r["geraakt"])))
+            paar = (float(r["kans"]), int(r["geraakt"]))
+            g["gescoord"].append(paar)
+            g["per_dag"].setdefault(r["datum"], []).append(paar)
         else:
             g["open"].append(r["datum"])
 
@@ -275,6 +292,11 @@ def _kansen(con: sqlite3.Connection, cfg: dict) -> dict:
             # Wie altijd de basiskans zegt (hoe vaak het uitkwam), scoort f * (1 - f).
             "brier_basiskans": _getal((lambda f: f * (1 - f))(sum(x for _, x in paren) / len(paren)), 4) if paren else None,
             "vakken": vakken, "eerste_score": eerste,
+            "beslisdagen": len(g["per_dag"]),
+            # Alleen de relatieve vraag krijgt een toets; de absolute wordt alleen getoond.
+            "p_beter_dan_basiskans": _getal(kalibratie.toets_tegen_basiskans(g["per_dag"]), 3)
+            if vraag == RELATIEF and paren else None,
+            "alleen_tonen": vraag != RELATIEF,
         })
     return {"brier_geen_idee": kalibratie.BRIER_GEEN_IDEE, "horizon_dagen": horizon,
             "kosten_pct": kalibratie.kosten_heen_en_terug_pct(cfg), "groepen": uit}
@@ -483,7 +505,7 @@ def exporteer(
             continue
         map_ = data / naam
         _schrijf(map_ / "overzicht.json", _overzicht(con, cfg_w, naam, vandaag))
-        _schrijf(map_ / "kansen.json", _kansen(con, cfg_w))
+        _schrijf(map_ / "kansen.json", _kansen(con, cfg_w, naam))
         _schrijf(map_ / "vergaderzaal.json", _vergaderzaal(con, map_))
         _schrijf(map_ / "weekrapport.json", _weekrapport(con))
         _schrijf(map_ / "kosten.json", _kosten(con, cfg_w, vandaag))

@@ -99,6 +99,12 @@ def _haal_data_op(jaren: float, waarschuwingen: list[str], db: str | None = None
     return True
 
 
+def _meting_voorbij(cfg: dict, datum: str) -> bool:
+    """Is deze beslisdag na de einddatum van de echte meting? (In de proefweek nooit.)"""
+    einde = (cfg.get("meting") or {}).get("einde")
+    return cfg.get("modus") == "echt" and bool(einde) and datum > str(einde)
+
+
 def _ai_ronde(
     con, cfg: dict, markt: Markt, datum: str, nieuw_nieuws: bool, ingehaald: int
 ) -> list[str]:
@@ -159,11 +165,31 @@ def _ai_ronde(
 
     client = maak_client(con, cfg)
     kosten_vandaag = 0.0
+    meting = cfg.get("meting") or {}
+    hoofd = meting.get("ai_portefeuille", "ai_analist")
+    echt = cfg.get("modus") == "echt"
+    # Na de einddatum beoordeelt de AI niets meer (dat kost alleen nog geld en telt
+    # niet mee). Posities lopen af: de code verkoopt ze na hun houdtijd.
+    voorbij = _meting_voorbij(cfg, datum)
+    if voorbij:
+        print(f"De meting liep tot en met {meting['einde']}: de AI beoordeelt niets meer.")
+        bericht.append(f"AI gestopt: de meting liep tot en met {meting['einde']}.")
     for p in portefeuilles:
         naam = p["naam"]
         print(f"\n  {naam} ({p['soort']}" + (f", alles op {p['model']})" if p["model"] else ")"))
+        te_beoordelen = [] if voorbij else symbolen
+        if echt and not voorbij and naam != hoofd:
+            # Reserve voor de hoofdvraag: een bijportefeuille draait alleen als er
+            # daarna genoeg budget over is om de hoofd-AI de maand te laten afmaken.
+            reserve = budget.reserve_voor(hoofd, datum, cfg)
+            if budget.resterend() - budget.nachtkosten(naam) < reserve:
+                te_beoordelen = []
+                tekst = (f"{naam} overgeslagen: het budget ({dollar(budget.resterend(), 2)} over) is nodig om "
+                         f"{hoofd} de maand te laten afmaken (reserve {dollar(reserve, 2)}).")
+                print(f"    {tekst}")
+                bericht.append(tekst)
         uitkomst = denk_na(
-            con, cfg, client, markt, naam, datum, symbolen,
+            con, cfg, client, markt, naam, datum, te_beoordelen,
             model_override=p["model"], soort=p["soort"],
         )
         kosten_vandaag += uitkomst.kosten_usd
@@ -461,6 +487,14 @@ def ronde(args) -> tuple[int, str | None]:
 
     te_doen = [d for d in markt.datums if vanaf <= d <= tot]
     print(f"Te verwerken: {vanaf} tot en met {tot} ({len(te_doen)} dagen in de data).")
+    # Hoeveel BEURSdagen echt nieuw zijn (nog door geen enkele portefeuille verwerkt).
+    # De lijst hierboven begint bij de laatst verwerkte dag, dus die telt niet mee;
+    # weekenddagen ook niet, want daarop beslist de AI toch niet.
+    kalender_dagen = set(markt.handelsdagen_van(cfg["rapport"]["kalender_symbool"]))
+    al_gedaan = max(
+        (database.laatste_verwerkte_dag(con, d.portefeuille.naam) or "" for d in motor.deelnemers), default=""
+    )
+    nieuwe_dagen = sum(1 for d in te_doen if d > al_gedaan and d in kalender_dagen)
 
     # ---- 3b. zijn de koersen compleet? ----
     from bot import volledigheid
@@ -515,7 +549,7 @@ def ronde(args) -> tuple[int, str | None]:
         ai_regels = ["AI-analist overgeslagen (niet de echte database)."]
     elif not args.geen_ai:
         ai_regels = _ai_ronde(
-            con, cfg, markt, tot, nieuw_nieuws=not args.geen_data, ingehaald=len(te_doen)
+            con, cfg, markt, tot, nieuw_nieuws=not args.geen_data, ingehaald=nieuwe_dagen
         )
 
     # ---- 6. het weekrapport ----

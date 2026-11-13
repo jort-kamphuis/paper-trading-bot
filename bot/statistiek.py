@@ -234,8 +234,9 @@ def beoordeel(
     if p is not None and p <= grens and gemiddelde > 0:
         return Zekerheid(
             aantal, gemiddelde, p, True, nodig,
-            f"Met {aantal} trades en een p-waarde van {p:.3f} is dit resultaat "
-            f"waarschijnlijk geen geluk. Dat is geen garantie voor de toekomst.",
+            f"{aantal} trades met gemiddeld winst (p {p:.3f}, verkennend). Dit zegt alleen dat "
+            f"de trades samen boven nul uitkwamen, niet dat de strategie de meetlat versloeg: in "
+            f"een stijgende markt haalt ook willekeurig kopen dit vaak.",
         )
 
     delen = [f"{aantal} trades, maar het resultaat is nog niet te onderscheiden van geluk"]

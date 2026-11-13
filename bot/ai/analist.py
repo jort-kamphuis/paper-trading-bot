@@ -20,7 +20,7 @@ from typing import Any
 from bot.ai import rollen
 from bot.ai.client import Antwoord, ClaudeClient
 from bot.ai.kenmerken import referentie as referentie_van
-from bot.ai.kenmerken import tabel, vraagsoort
+from bot.ai.kenmerken import basiskans, tabel, vraagsoort
 from bot.data import nieuws as mod_nieuws
 from bot.markt import Markt
 
@@ -72,16 +72,31 @@ class AIAnalist:
 
     def _vraag(self, rol: str, systeem: str, bericht: str, schema: dict) -> Antwoord:
         d = self.ai["denkwerk"][rol]
-        return self.client.vraag(
-            rol=rol,
-            model=self._model(rol),
-            systeem=systeem,
-            bericht=bericht,
-            max_tokens=int(self.ai["max_tokens"][rol]),
-            schema=schema,
-            denken=d["denken"],
-            inspanning=d["inspanning"],
-        )
+
+        def een_keer() -> Antwoord:
+            return self.client.vraag(
+                rol=rol,
+                model=self._model(rol),
+                systeem=systeem,
+                bericht=bericht,
+                max_tokens=int(self.ai["max_tokens"][rol]),
+                schema=schema,
+                denken=d["denken"],
+                inspanning=d["inspanning"],
+            )
+
+        # Een afgekapt, geweigerd of onleesbaar antwoord krijgt een herkansing
+        # (config: ai.herkansingen). Zonder herkansing blokkeert een enkele hapering
+        # alle aankopen van die nacht. Beide pogingen zijn betaald en geboekt.
+        antwoord = een_keer()
+        betaald = antwoord.usd
+        for _ in range(int(self.ai.get("herkansingen", 0))):
+            if not antwoord.probleem():
+                break
+            antwoord = een_keer()
+            betaald += antwoord.usd
+        antwoord.usd = betaald
+        return antwoord
 
     def beoordeel(
         self,
@@ -97,6 +112,10 @@ class AIAnalist:
         if kenmerken is None:
             b.probleem = "geen koers op deze dag"
             return b
+        # De basiskans hoort bij wat het model te zien krijgt, dus hij wordt mee opgeslagen.
+        basis = basiskans(symbool, self.ai.get("basiskansen"))
+        if basis is not None:
+            kenmerken["basiskans"] = basis
         b.stappen["kenmerken"] = kenmerken
 
         b.koppen = [

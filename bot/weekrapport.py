@@ -220,7 +220,7 @@ def maak(
     from bot.ai import kalibratie
 
     heeft_kansen = con.execute("SELECT 1 FROM ai_besluiten WHERE kans IS NOT NULL LIMIT 1").fetchone()
-    kalibratie_tekst = kalibratie.als_tekst(con) if heeft_kansen else ""
+    kalibratie_tekst = kalibratie.als_tekst(con, *kalibratie.venster(cfg)) if heeft_kansen else ""
 
     tekst = "\n\n".join(
         d for d in [cijfers_tekst, proef_tekst, kalibratie_tekst, "\n".join(ai_regels), kosten,

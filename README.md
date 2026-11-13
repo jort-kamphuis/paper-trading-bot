@@ -29,7 +29,8 @@ beantwoorden. Dit verandert tijdens de meting niet.
 | **Maatstaf** | Per beursdag: het rendement van `ai_analist` min (het belegde deel van `ai_analist` de dag ervoor × het rendement van de meetlat). In dollars, inclusief dividend en na kosten en slippage |
 | **Toets** | Eenzijdig (is `ai_analist` beter?). De dagverschillen gaan in aaneengesloten blokken van ongeveer 10 beursdagen; op de blokgemiddelden een t-toets met (aantal blokken − 1) vrijheidsgraden. "Ja" bij een hoger rendement en een p-waarde van 0,05 of lager |
 | **Start** | maandag 23 november 2026. Deze dag ligt vast in `config.yaml` (`meting.start`), ook als de eerste nacht mislukt |
-| **Einde** | dinsdag 23 februari 2027. Er wordt nooit verder gerekend; pas als de koers van die dag er is, komt er een "ja" of "nee" |
+| **Einde** | dinsdag 23 februari 2027. Er wordt nooit verder gerekend; pas als de koers van die dag er is, komt er een "ja" of "nee". Daarna beoordeelt de AI niets meer; er is geen tweede meetmoment |
+| **Daarnaast** | Twee cijfers die erbij staan maar niet de hoofdvraag zijn: het verschil met meetlatten van **dezelfde soort** (aandelen plus ETF's, of crypto), even belegd; en de handelskosten van `ai_analist` in procentpunten |
 
 Waarom zo, en niet anders (review november 2026):
 
@@ -76,6 +77,21 @@ zijn verschillende vragen:
 
 Bij elke kans staat in de database welke soort vraag het was (`ai_besluiten.vraag`).
 De twee soorten worden nooit samengevoegd tot één score.
+
+Hoe de kansen worden beoordeeld, ligt ook vooraf vast:
+
+* Alleen kansen van beslisdagen van 23 november tot en met 23 februari tellen mee.
+* **Relatief:** is de Brier-score beter dan "altijd de basiskans zeggen"? Per
+  beslisdag het gemiddelde verschil, en daarop dezelfde toets op blokgemiddelden
+  als bij de hoofdvraag (eenzijdig, blokken van 10 beslisdagen). Verkennend.
+* **Absoluut** (SPY en BTC): alleen tonen, geen conclusie. Dat zijn twee kansen per
+  dag over overlappende periodes; daar valt in drie maanden niets uit af te leiden.
+
+**Waarom ook "dezelfde soort"?** Een AI die alleen crypto koopt, wint of verliest
+tegenover alle 46 symbolen vooral door de richting van crypto, niet door goed
+kiezen. Daarom lopen er twee meetlatten mee, `gelijk_aandelen` (aandelen plus
+ETF's) en `gelijk_crypto`, en wordt `ai_analist` ook vergeleken met wat hij zelf
+per soort belegd had. De hoofdvraag blijft de vergelijking met `gelijk_alle`.
 
 **Eerlijke verwachting:** drie maanden is kort. De kans is groot dat het verschil
 aan het eind niet te onderscheiden is van toeval. Dat is dan ook een uitkomst:
@@ -335,7 +351,7 @@ verbetering komt er daarom altijd als nieuwe portefeuille bij.
    dagen, met dezelfde toets als de hoofdvraag. Zijn er nog te weinig beursdagen
    voor die toets (bijvoorbeeld door feestdagen), dan loopt de proef door. Alleen als B
    **betekenisvol** beter is (hoger rendement en een p-waarde van 0,05 of lager,
-   met dezelfde blok-bootstrap), krijg je de vraag:
+   met dezelfde toets als de hoofdvraag), krijg je de vraag:
 
 ```
 /akkoord 1
@@ -473,7 +489,7 @@ Gangbare instellingen uit de literatuur, **niet** afgesteld op de backtest.
 | **Trend volgend** | Zolang het 50-daags gemiddelde boven het 200-daags ligt, erin; zakt het eronder, eruit. Bij te weinig plek gaan de sterkste trends voor. |
 | **Meetlat SPY** | Koop op dag 1 voor het hele bedrag SPY en doe daarna niets meer. |
 | **Meetlat BTC** | Hetzelfde met bitcoin. |
-| **Meetlat gelijk verdeeld** | `gelijk_alle`: op dag 1 het bedrag gelijk verdeeld over alle symbolen, daarna niets meer. Volgt de AI een kleinere lijst, dan ook `gelijk_ai` over die lijst. |
+| **Meetlat gelijk verdeeld** | `gelijk_alle`: op dag 1 het bedrag gelijk verdeeld over alle symbolen, daarna niets meer. Volgt de AI een kleinere lijst, dan ook `gelijk_ai` over die lijst. Per soort: `gelijk_aandelen` (aandelen plus ETF's) en `gelijk_crypto`, over de symbolen waaruit de AI kiest. |
 
 De meetlatten hebben geen grens van 10 posities en geen 10%-regel: die zetten
 alles in een keer in.
@@ -522,19 +538,30 @@ Wat er gekocht en verkocht wordt, beslist de **code**, met regels die voor de
 start vastliggen (`config.yaml`, onder `ai.beslisregel`):
 
 * **Kopen** bij een kans van 0,55 of meer **en** een verwacht extra rendement
-  van 0,5% of meer. Eerst worden alle symbolen beoordeeld, daarna gaan de beste
-  verwachtingen voor. Zo wint niet het symbool dat toevallig vooraan in de lijst
-  staat.
+  van 0,5% of meer. Eerst worden alle symbolen beoordeeld, daarna gaan de hoogste
+  kansen voor. Zo wint niet het symbool dat toevallig vooraan in de lijst staat.
+  Bij een gelijke kans telt de verwachting gedeeld door de dagschommeling, anders
+  wint altijd het beweeglijkste symbool.
+* **Hooguit 2 cryptoposities** tegelijk, net als bij mean reversion.
 * **Verkopen** als de kans onder 0,50 zakt, of na 14 kalenderdagen, tenzij het
   symbool dan opnieuw aan de koopregel voldoet (dan begint de houdtijd opnieuw).
-* **Niet kopen** in een nacht waarin niet alles beoordeeld kon worden (budget op
-  of fouten): dan zou de keuze scheef zijn.
+* **Niet kopen** in een nacht waarin niet alles beoordeeld kon worden (budget op,
+  fouten, of een antwoord dat ook na één herkansing onbruikbaar bleef): dan zou de
+  keuze scheef zijn.
 
 Waarom zo? In de eerste proefronde koos de oude opzet, waarin de AI zelf
 KOOP/VERKOOP/NIETS zei, alle 144 keer "niets". Zo meet je niets. Nu wordt elke
 kans bewaard, ook als er niets gebeurt, en scoort de bot hem na 14 dagen
-(`bot/ai/kalibratie.py`, op slotkoersen). Het weekrapport en het
+(`bot/ai/kalibratie.py`, vanaf de opening waarop hij zou kopen). Het weekrapport en het
 proefweekverslag laten de uitkomst zien, per AI-portefeuille en per soort vraag.
+
+**Wat de AI als anker krijgt.** In elke vraag staat de periode precies (van de
+opening na de beslisdag tot het slot 14 dagen later) en de **basiskans**: hoe vaak
+het antwoord de afgelopen twee jaar "ja" was. Dat is niet 0,5. Gemeten met de
+scoorfunctie van de bot zelf: een aandeel of ETF verslaat SPY na kosten in 46% van
+de gevallen, een altcoin verslaat bitcoin in 38%, SPY stijgt meer dan de kosten in
+53%, bitcoin in 45% (`config.yaml`, `ai.basiskansen`). Weet de AI niets
+bijzonders, dan hoort hij die basiskans te geven.
 
 ### Wie wat doet
 
@@ -550,7 +577,7 @@ lezen.
 | Nieuwsanalist | leest de koppen en zoekt vooral naar risico's en gebeurtenissen | Claude Haiku 5.5 |
 | Bull | het sterkste eerlijke argument voor | Claude Sonnet 5.5 |
 | Bear | het sterkste eerlijke argument ertegen | Claude Sonnet 5.5 |
-| Risk manager | weegt alles en geeft de kans en het verwachte extra rendement | Claude Sonnet 5.5 |
+| Risk manager (in de prompt: de voorspeller) | weegt alles en geeft de kans en het verwachte extra rendement | Claude Sonnet 5.5 |
 
 Bull, bear en risk manager zien ook zelf de nieuwskoppen, niet alleen de
 samenvatting. Alles wordt bewaard in de tabel `ai_besluiten`: de kengetallen,
@@ -593,6 +620,11 @@ keer gekocht voor de hele meting, met automatisch opwaarderen uit: het tegoed
 zelf is de noodrem. Het bedrag komt uit de gemeten kosten van de proefnachten
 (zie de proefweek). Is het tegoed op, dan meldt de bot dat in Telegram.
 
+Het budget telt per maand, en december heeft de meeste AI-nachten (22). Wordt het
+in een maand krap, dan stoppen eerst `ai_controle_haiku` en `ai_enkel`: de bot
+houdt genoeg over om `ai_analist`, de portefeuille van de hoofdvraag, de maand te
+laten afmaken. Na de einddatum beoordeelt de AI niets meer.
+
 * **Nooit twee keer betalen.** Een beoordeling die al bestaat, wordt niet opnieuw
   gevraagd. Draait het script twee keer op een dag, dan kost de tweede keer niets.
 * **Elke aanroep wordt geboekt** in de tabel `ai_kosten`, met de prijzen uit
@@ -632,11 +664,12 @@ ongeveer maakt, en de slechtste voorstellen van de challenger tegenhouden.
 
 ### "Betekenisvol" of nog gewoon geluk (verkennend)
 
-Twee manieren, allebei met een "bootstrap" (10.000 keer opnieuw trekken uit wat
-er gebeurd is):
+Twee manieren, allebei verkennend:
 
-* **Per strategie:** het resultaat in dollars van elke afgeronde trade. Blijft
-  het gemiddelde bijna altijd positief, dan is het waarschijnlijk geen toeval.
+* **Per strategie:** het resultaat in dollars van elke afgeronde trade, met een
+  "bootstrap" (10.000 keer opnieuw trekken uit wat er gebeurd is). Dit zegt alleen
+  of de trades samen boven nul uitkwamen, niet of de strategie de meetlat versloeg:
+  in een stijgende markt haalt ook willekeurig kopen dit vaak.
 * **Tegenover een meetlat:** de dagelijkse verschillen in rendement, in
   **blokken van ongeveer 10 beursdagen**, met een t-toets op de blokgemiddelden
   (zie de hoofdvraag). Goede dagen komen vaak achter elkaar; wie
@@ -744,7 +777,7 @@ paper-trading-bot/
 │   ├── zet_github_secrets.py  sleutels uit .env naar GitHub Secrets
 │   ├── slank_maken.py       database klein maken voor git (door GitHub)
 │   └── meld_fout.py         foutmelding naar Telegram (door GitHub)
-└── tests/                   308 tests
+└── tests/                   329 tests
 ```
 
 ### Wanneer begint de meting

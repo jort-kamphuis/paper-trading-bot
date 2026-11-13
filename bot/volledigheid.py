@@ -88,11 +88,17 @@ def controleer(markt: Markt, cfg: dict, dagen: list[str]) -> list[str]:
 
     kalender = cfg["rapport"]["kalender_symbool"]
     beursdagen = set(markt.handelsdagen_van(kalender))
-    cryptodagen: set[str] = set()
-    for symbool in crypto:
-        cryptodagen.update(markt.handelsdagen_van(symbool))
 
     verdwenen_na = verdwenen_grens(cfg)
+    # Een aandeel is verdwenen als het tot en met de LAATSTE dag van de lijst al
+    # zoveel beursdagen achter elkaar geen koers heeft. Dan blokkeert geen van die
+    # dagen meer. (Per dag tellen werkt niet: de eerste twee gemiste dagen bleven dan
+    # altijd een probleem, waardoor de derde nooit werd bereikt; review 3.)
+    laatste = max(dagen)
+    verdwenen = {
+        s for s in aandelen
+        if markt.heeft(s) and gemiste_beursdagen(markt, s, laatste, kalender) >= verdwenen_na
+    }
     for dag in dagen:
         if beurs_open_volgens_kalender(cfg, dag) and dag not in beursdagen:
             problemen.append(
@@ -101,15 +107,17 @@ def controleer(markt: Markt, cfg: dict, dagen: list[str]) -> list[str]:
         if dag in beursdagen:
             for symbool in aandelen:
                 if markt.heeft(symbool) and markt.bar(symbool, dag) is None:
-                    if gemiste_beursdagen(markt, symbool, dag, kalender) >= verdwenen_na:
+                    if symbool in verdwenen and dag > markt.tot_en_met(symbool, laatste).index[-1]:
                         continue  # verdwenen: de motor sluit de positie, de handel gaat door
                     problemen.append(f"{symbool}: geen koers op {dag}, terwijl {kalender} die dag wel handelde")
                     continue
                 sprong = _verdachte_sprong(markt, symbool, dag)
                 if sprong:
                     problemen.append(sprong)
-        if dag in cryptodagen:
-            for symbool in crypto:
-                if markt.heeft(symbool) and markt.bar(symbool, dag) is None:
-                    problemen.append(f"{symbool}: geen koers op {dag}")
+        # Crypto handelt elke dag. Elke te verwerken dag moet dus een koers hebben
+        # voor elk paar, ook als geen enkel paar die dag iets leverde (anders wordt
+        # zo'n dag stil verwerkt op de koers van gisteren; review 3).
+        for symbool in crypto:
+            if markt.heeft(symbool) and markt.bar(symbool, dag) is None:
+                problemen.append(f"{symbool}: geen koers op {dag}")
     return problemen

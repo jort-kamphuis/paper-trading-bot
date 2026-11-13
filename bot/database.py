@@ -86,6 +86,36 @@ CREATE TABLE IF NOT EXISTS waarde (
     PRIMARY KEY (portefeuille, datum)
 );
 
+-- Orders die nog moeten worden uitgevoerd. Een besluit van vandaag gaat pas
+-- morgen af, en tussendoor stopt het dagelijkse script. Daarom staat de
+-- wachtrij hier en niet in het geheugen.
+CREATE TABLE IF NOT EXISTS wachtrij (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    portefeuille  TEXT NOT NULL,
+    symbool       TEXT NOT NULL,
+    actie         TEXT NOT NULL,
+    reden         TEXT,
+    zekerheid     REAL,
+    besluit_datum TEXT NOT NULL,
+    UNIQUE (portefeuille, symbool, actie, besluit_datum)
+);
+
+-- Welke dagen al verwerkt zijn, per portefeuille. Hiermee kan het dagelijkse
+-- script twee keer op dezelfde dag draaien zonder dubbele trades.
+CREATE TABLE IF NOT EXISTS verwerkte_dagen (
+    portefeuille TEXT NOT NULL,
+    datum        TEXT NOT NULL,
+    verwerkt_op  TEXT NOT NULL,
+    PRIMARY KEY (portefeuille, datum)
+);
+
+-- Losse instellingen die de bot zelf onthoudt, zoals de startdatum van de meting.
+CREATE TABLE IF NOT EXISTS instellingen (
+    sleutel   TEXT PRIMARY KEY,
+    waarde    TEXT NOT NULL,
+    gewijzigd TEXT NOT NULL
+);
+
 -- Nieuwskoppen die de AI-analist te zien kreeg (wordt gevuld in stap 3).
 CREATE TABLE IF NOT EXISTS nieuws (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -179,10 +209,67 @@ def wisselkoersen_dict(con: sqlite3.Connection) -> dict[str, float]:
 
 
 def leeg_handelsdata(con: sqlite3.Connection) -> None:
-    """Wis portefeuilles, posities, trades en waardes. Koersen blijven staan.
+    """Wis portefeuilles, posities, trades, waardes en de voortgang.
 
-    Gebruikt door de backtest, zodat die altijd schoon begint.
+    Koersen en nieuws blijven staan. Gebruikt door de backtest, zodat die
+    altijd schoon begint.
     """
-    for tabel in ("trades", "posities", "waarde", "portefeuilles"):
+    for tabel in (
+        "trades", "posities", "waarde", "portefeuilles",
+        "wachtrij", "verwerkte_dagen",
+    ):
         con.execute(f"DELETE FROM {tabel}")
     con.commit()
+
+
+# ---------------------------------------------------------------- instellingen
+
+
+def zet_instelling(con: sqlite3.Connection, sleutel: str, waarde: str) -> None:
+    """Onthoud een instelling, bijvoorbeeld de startdatum van de meting."""
+    con.execute(
+        """INSERT INTO instellingen (sleutel, waarde, gewijzigd)
+           VALUES (?, ?, datetime('now'))
+           ON CONFLICT(sleutel) DO UPDATE SET
+             waarde=excluded.waarde, gewijzigd=excluded.gewijzigd""",
+        (sleutel, waarde),
+    )
+    con.commit()
+
+
+def lees_instelling(con: sqlite3.Connection, sleutel: str) -> str | None:
+    rij = con.execute(
+        "SELECT waarde FROM instellingen WHERE sleutel = ?", (sleutel,)
+    ).fetchone()
+    return rij["waarde"] if rij else None
+
+
+# ------------------------------------------------------------------ voortgang
+
+
+def dag_is_verwerkt(con: sqlite3.Connection, portefeuille: str, datum: str) -> bool:
+    """Is deze dag voor deze portefeuille al gedaan?"""
+    return (
+        con.execute(
+            "SELECT 1 FROM verwerkte_dagen WHERE portefeuille = ? AND datum = ?",
+            (portefeuille, datum),
+        ).fetchone()
+        is not None
+    )
+
+
+def markeer_dag_verwerkt(con: sqlite3.Connection, portefeuille: str, datum: str) -> None:
+    con.execute(
+        """INSERT INTO verwerkte_dagen (portefeuille, datum, verwerkt_op)
+           VALUES (?, ?, datetime('now'))
+           ON CONFLICT(portefeuille, datum) DO NOTHING""",
+        (portefeuille, datum),
+    )
+
+
+def laatste_verwerkte_dag(con: sqlite3.Connection, portefeuille: str) -> str | None:
+    rij = con.execute(
+        "SELECT MAX(datum) AS d FROM verwerkte_dagen WHERE portefeuille = ?",
+        (portefeuille,),
+    ).fetchone()
+    return rij["d"] if rij and rij["d"] else None

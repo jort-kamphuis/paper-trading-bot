@@ -127,6 +127,11 @@ strategieen:
       - BTC/USDT
 
 rapport:
+  # Het symbool dat de meetkalender bepaalt: de dagen dat de Amerikaanse beurs
+  # open was. Daarop beginnen alle portefeuilles tegelijk, en daarop worden de
+  # Sharpe ratio en de grootste daling gerekend. Zo is een portefeuille vol
+  # crypto (die altijd handelt) eerlijk te vergelijken met een met aandelen.
+  kalender_symbool: SPY
   # Hoeveel trades er minstens moeten zijn voor een uitspraak, en met welke
   # zekerheid we rekenen in de toets.
   min_trades_voor_uitspraak: 30

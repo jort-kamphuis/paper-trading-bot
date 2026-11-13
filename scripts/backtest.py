@@ -27,11 +27,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bot import config as conf
 from bot import database, statistiek
-from bot.markt import Markt
-from bot.motor import Motor
-from bot.strategieen import maak_strategieen
-from bot.strategieen.benchmarks import KoopEnHoud
 from bot.data.wisselkoers import Wisselkoers
+from bot.markt import Markt
+from bot.opzet import bouw_motor
+from bot.strategieen.benchmarks import KoopEnHoud
 
 
 def _reeks(con, portefeuille: str) -> tuple[list[str], list[float]]:
@@ -116,23 +115,11 @@ def main() -> int:
     print()
 
     database.leeg_handelsdata(con)
-    motor = Motor(con, cfg, markt, wk)
+    # Precies dezelfde opstelling als de dagelijkse ronde, zodat de backtest
+    # niet per ongeluk andere regels hanteert.
+    motor = bouw_motor(con, cfg, markt, wk, begin=begin, stil=False)
 
-    symbolen = conf.alle_symbolen(cfg)
-    aanwezig = [s for s in symbolen if markt.heeft(s)]
-    ontbreekt = [s for s in symbolen if not markt.heeft(s)]
-    if ontbreekt:
-        print(f"Geen koersen voor: {ontbreekt}\n")
-
-    for strategie in maak_strategieen(cfg):
-        motor.voeg_toe(strategie, aanwezig, gestart_op=begin)
-    if cfg["strategieen"]["benchmarks"]["actief"]:
-        for symbool in cfg["strategieen"]["benchmarks"]["posities"]:
-            if markt.heeft(symbool):
-                motor.voeg_toe(KoopEnHoud(symbool), [symbool], gestart_op=begin)
-            else:
-                print(f"Meetlat {symbool} overgeslagen: geen koersen")
-
+    aanwezig = [s for s in conf.alle_symbolen(cfg) if markt.heeft(s)]
     print(f"{len(motor.deelnemers)} portefeuilles, {len(aanwezig)} symbolen. Draaien...")
     dagen = motor.draai_periode(begin, eind, stil=False)
     print(f"\n{dagen} handelsdagen verwerkt.\n")
@@ -143,7 +130,7 @@ def main() -> int:
 
     # Alle risicocijfers op dezelfde meetkalender: de dagen dat de Amerikaanse
     # beurs open was. Zie statistiek.op_kalender voor het waarom.
-    kalender = markt.handelsdagen_van("SPY") or markt.datums
+    kalender = markt.handelsdagen_van(cfg["rapport"]["kalender_symbool"]) or markt.datums
     kalender = [d for d in kalender if begin <= d <= eind]
     print(f"Meetkalender: {len(kalender)} beursdagen\n")
 

@@ -121,6 +121,11 @@ class Portefeuille:
         aantal = bedrag / prijs_eur
         kosten = bedrag * (self.kosten_pct / 100.0)
         self.kas_eur -= bedrag + kosten
+        # Bij het inleggen van de hele kas blijft er een restje van een
+        # biljoenste cent staan, soms negatief. Dat is rekenruis van de
+        # computer, geen geld. Weghalen, anders staat er '-0,00' op het scherm.
+        if abs(self.kas_eur) < 0.005:
+            self.kas_eur = 0.0
         self.posities[symbool] = Positie(
             symbool=symbool,
             aantal=aantal,
@@ -218,7 +223,13 @@ class Portefeuille:
     # ---------- opslaan en inlezen ----------
 
     def bewaar(self, con: sqlite3.Connection) -> None:
-        """Schrijf de stand en de nieuwe trades naar de database."""
+        """Schrijf de stand en de nieuwe trades naar de database.
+
+        Let op: hier wordt niet vastgelegd (geen commit). De motor doet dat
+        een keer per dag, zodat alles van die dag in een keer doorgaat of in
+        een keer niet. Anders zou een storing halverwege een halve dag kunnen
+        achterlaten.
+        """
         con.execute(
             """INSERT INTO portefeuilles (naam, strategie, variant, start_kapitaal, kas_eur, gestart_op, actief)
                VALUES (?, ?, ?, ?, ?, ?, 1)
@@ -260,7 +271,6 @@ class Portefeuille:
                 ],
             )
             self.nieuwe_trades.clear()
-        con.commit()
 
     def bewaar_waarde(self, con: sqlite3.Connection, datum: str, prijzen_eur: dict[str, float]) -> None:
         posities_eur = self.posities_waarde(prijzen_eur)

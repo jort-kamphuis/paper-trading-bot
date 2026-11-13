@@ -58,6 +58,18 @@ def test_kas_wordt_nooit_negatief_bij_veel_kopen():
         assert p.kas_eur >= -1e-9
 
 
+def test_hele_kas_inleggen_laat_geen_rekenruis_achter():
+    """De meetlat legt alles in een keer in; de kas moet dan netjes nul zijn."""
+    p = pf()
+    bedrag = p.kas_eur / (1.0 + 0.1 / 100.0)
+    p.koop(
+        symbool="SPY", datum="2025-01-02", besluit_datum="2025-01-01",
+        open_koers=600.0, valuta="USD", eurusd=1.10, bedrag_eur=bedrag,
+    )
+    assert p.kas_eur == 0.0
+    assert f"{p.kas_eur:.2f}" == "0.00", "er staat '-0.00' op het scherm"
+
+
 def test_verkoop_berekent_het_resultaat_na_kosten():
     p = pf()
     p.koop(

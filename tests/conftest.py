@@ -86,6 +86,7 @@ def cfg_min():
             "benchmarks": {"actief": True, "posities": ["SPY"]},
         },
         "rapport": {
+            "kalender_symbool": "SPY",
             "min_trades_voor_uitspraak": 30,
             "betrouwbaarheid": 0.95,
             "onderscheidend_vermogen": 0.80,

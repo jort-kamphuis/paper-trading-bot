@@ -14,7 +14,7 @@ geen aanbeveling om iets te kopen of te verkopen.
 
 ---
 
-## Wat er nu klaar is (stap 1 van 6)
+## Wat er nu klaar is (stap 2 van 6)
 
 | Onderdeel | Status |
 |---|---|
@@ -24,6 +24,8 @@ geen aanbeveling om iets te kopen of te verkopen.
 | De nep-broker met kosten en slippage | klaar |
 | Backtest over het afgelopen jaar | klaar |
 | Logboek in SQLite | klaar |
+| Dagelijkse ronde, veilig om twee keer te draaien | klaar |
+| Overzicht van de stand | klaar |
 | AI-analist (Claude) | stap 3 |
 | Automatisch draaien via GitHub Actions | stap 4 |
 | Telegram-meldingen | stap 4 |
@@ -53,17 +55,48 @@ geschiedenis op voor alle 48 symbolen:
 .venv\Scripts\python.exe scripts\vernieuw_data.py --jaren 3
 ```
 
-**3. De backtest draaien:**
+**3. De dagelijkse ronde draaien.** De eerste keer begint hiermee de echte
+meting: elke portefeuille krijgt €1.000 nep-geld.
+
+```bash
+.venv\Scripts\python.exe scripts\dagelijks.py
+```
+
+**4. Kijken hoe het ervoor staat:**
+
+```bash
+.venv\Scripts\python.exe scripts\stand.py --trades
+```
+
+**5. De backtest draaien** (mag, maar is geen bewijs; zie verderop):
 
 ```bash
 .venv\Scripts\python.exe scripts\backtest.py
 ```
 
-**4. De tests draaien** (doe dit na elke wijziging):
+**6. De tests draaien** (doe dit na elke wijziging):
 
 ```bash
 .venv\Scripts\python.exe -m pytest tests -q
 ```
+
+### De dagelijkse ronde
+
+`scripts/dagelijks.py` is het script dat straks elke nacht vanzelf draait. Het
+haalt de nieuwste koersen op, laat elke strategie beslissen, voert de orders van
+gisteren uit en legt de stand vast. Je kunt het zonder zorgen opnieuw draaien:
+
+* **Twee keer op dezelfde dag?** Een dag die al verwerkt is, wordt
+  overgeslagen. Er komen nooit dubbele trades.
+* **Een paar dagen niets gedraaid?** Die dagen worden vanzelf ingehaald, in de
+  goede volgorde.
+* **Halverwege een storing?** Alles van één dag gaat in één keer de database in.
+  Gaat het mis, dan wordt die hele dag teruggedraaid en blijft er niets half
+  staan.
+
+Opnieuw beginnen kan met `scripts\herstart_meting.py`. Dat wist alle
+portefeuilles en trades, dus je bent je meting kwijt. Het vraagt eerst om
+bevestiging.
 
 ---
 
@@ -185,13 +218,26 @@ paper-trading-bot/
 │   ├── portefeuille.py      de nep-broker
 │   ├── motor.py             laat alles dag na dag draaien
 │   ├── statistiek.py        rendement, risico en "is dit al iets?"
+│   ├── opzet.py             zet alle strategieën klaar
+│   ├── overzicht.py         teksten over de stand (ook voor Telegram)
 │   ├── data/                koersen en wisselkoers ophalen
 │   └── strategieen/         de vier strategieën en de meetlat
 ├── scripts/
 │   ├── vernieuw_data.py     koersen ophalen
-│   └── backtest.py          de backtest
-└── tests/                   53 tests
+│   ├── dagelijks.py         de dagelijkse ronde
+│   ├── stand.py             laat zien hoe het ervoor staat
+│   ├── backtest.py          de backtest
+│   └── herstart_meting.py   opnieuw beginnen (wist alles)
+└── tests/                   66 tests
 ```
+
+### Wanneer begint de meting
+
+De eerste keer dat je `dagelijks.py` draait, onthoudt de bot de startdatum. Die
+wordt gezet op de laatste dag dat de Amerikaanse beurs open was, en niet
+zomaar op vandaag. Anders zou de meting kunnen beginnen op een dag dat alleen
+crypto handelde, en gingen de aandelenstrategieën en de meetlat SPY een dag
+later van start dan de rest. Nu beginnen ze allemaal tegelijk.
 
 ---
 

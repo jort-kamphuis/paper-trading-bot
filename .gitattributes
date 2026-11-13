@@ -1,0 +1,4 @@
+# Regeleinden vastleggen. De bot draait straks op Linux (GitHub Actions) en
+# hier op Windows; zonder deze regel verschilt elk bestand per computer.
+* text=auto eol=lf
+*.db binary

@@ -14,7 +14,7 @@ geen aanbeveling om iets te kopen of te verkopen.
 
 ---
 
-## Wat er nu klaar is (stap 2 van 6)
+## Wat er nu klaar is (stap 3 van 6)
 
 | Onderdeel | Status |
 |---|---|
@@ -26,7 +26,8 @@ geen aanbeveling om iets te kopen of te verkopen.
 | Logboek in SQLite | klaar |
 | Dagelijkse ronde, veilig om twee keer te draaien | klaar |
 | Overzicht van de stand | klaar |
-| AI-analist (Claude) | stap 3 |
+| AI-analist (Claude), met controleportefeuille | klaar, wacht op je API-key |
+| Kostenmeting en maandprognose van de AI | klaar |
 | Automatisch draaien via GitHub Actions | stap 4 |
 | Telegram-meldingen | stap 4 |
 | Weekrapport en challenger | stap 5 |
@@ -135,11 +136,103 @@ De regelstrategieën volgen **48 symbolen**: 30 grote aandelen, 10 indexfondsen
 (ETF's) en 8 cryptoparen. Die lange lijst is er met een reden: hoe meer trades,
 hoe sneller je kunt zien of een resultaat echt is of toeval.
 
-De AI-analist blijft straks op **15 symbolen**, omdat elke beslissing daar geld
-kost bij de Claude-API.
+De AI-analist volgt **15 symbolen**, omdat elke beslissing daar geld kost bij de
+Claude-API.
 
 Alles staat in `config.yaml`. Je kunt daar namen toevoegen of weghalen zonder
 ook maar één regel code aan te raken.
+
+### Alleen afgesloten dagen
+
+De bot gebruikt alleen koersen van dagen die echt afgelopen zijn. Een aandelendag
+is af om 17:00 in New York (een uur na sluiting), een cryptodag om middernacht
+UTC. Een dag die nog bezig is, heeft als "slotkoers" gewoon de koers van dat
+moment; daarop beslissen zou betekenen dat je op een halve dag handelt. Zo'n dag
+wordt niet opgehaald, en als hij er toch staat, wordt hij weggehaald.
+
+---
+
+## De AI-analist
+
+De opzet is geleend van TradingAgents: vijf rollen die samen tot een besluit
+komen.
+
+| Rol | Doet | Model |
+|---|---|---|
+| Technisch analist | leest de kengetallen (RSI, gemiddeldes, rendement) | Claude Haiku 5.5 |
+| Nieuwsanalist | leest de nieuwskoppen en scheidt nieuws van ruis | Claude Haiku 5.5 |
+| Bull | geeft het sterkste eerlijke argument voor kopen | Claude Sonnet 5.5 |
+| Bear | geeft het sterkste eerlijke argument ertegen | Claude Sonnet 5.5 |
+| Risk manager | hakt de knoop door: KOOP, VERKOOP of NIETS | Claude Sonnet 5.5 |
+
+Elke beslissing krijgt een korte onderbouwing in gewone taal en een
+zekerheidsscore. Alles wordt bewaard in de tabel `ai_besluiten`: wat elke rol
+zei, en **welke nieuwskoppen de AI zag, met hun publicatietijd**.
+
+### Twee AI-portefeuilles
+
+* **`ai_analist`** werkt zoals in de tabel hierboven.
+* **`ai_controle_haiku`** krijgt exact dezelfde instructies en dezelfde data,
+  maar doet alles op het goedkoopste model.
+
+Zo zie je na een paar maanden of het duurdere model zijn geld waard was. Dat
+weet nu niemand: beter redeneren is niet hetzelfde als meer verdienen, en
+koersen op korte termijn zijn grotendeels ruis.
+
+### Regels die de bot zelf afdwingt
+
+Een instructie aan een model is een verzoek. Deze dingen zijn regels in de code:
+
+* Niet kopen wat je al hebt, niet verkopen wat je niet hebt, niet kopen zonder kas.
+* Onder een zekerheid van 0,6 wordt er niet gehandeld.
+* Een antwoord dat nergens op slaat, afgekapt is of geweigerd wordt, betekent:
+  niets doen. De reden komt in het logboek.
+* Zien beide analisten niets bijzonders en is er geen positie, dan wordt het
+  dure debat overgeslagen. Is er wel een positie, dan wordt er altijd gedebatteerd.
+* Een geweigerde vraag wordt niet stil naar een ander model doorgestuurd. Dan
+  zou je analist midden in de meting ongemerkt iemand anders worden.
+
+### Geen nieuws uit de toekomst
+
+De AI-analist ziet alleen koppen die vóór het beslismoment zijn gepubliceerd.
+yfinance geeft alleen de tien nieuwste berichten per symbool en er is geen
+nieuwsgeschiedenis. Daarom:
+
+* doet de AI-analist **niet mee in de backtest**;
+* beslist hij bij het inhalen van gemiste dagen **alleen over de nieuwste dag**.
+  Een besluit over drie dagen geleden met het nieuws van vandaag zou vooruitkijken
+  zijn.
+
+### Kosten
+
+Het budget staat in `config.yaml` op **$5,50 per maand** (ongeveer €5). Twee
+dingen houden de kosten in de hand:
+
+* **Nooit twee keer betalen.** Een beslissing die al bestaat, wordt niet opnieuw
+  gevraagd. Draait het script twee keer op een dag, dan kost de tweede keer niets.
+* **Elke aanroep wordt geboekt** in de tabel `ai_kosten`, met de prijzen uit
+  `config.yaml`.
+
+Het doel is dat de AI de hele maand meedoet, zodat elke maand vergelijkbaar is.
+Daarom kijk je na de eerste drie rondes met dit script wat een dag echt kost:
+
+```bash
+.venv\Scripts\python.exe scripts\ai_kosten.py
+```
+
+Past het niet binnen het budget, dan stelt het script aanpassingen voor die de
+hele maand gelijk houden (minder symbolen, het debat alleen bij een sterk
+signaal, de controleportefeuille uit), met wat elk scheelt. Het verandert zelf
+niets. Mocht het budget onverhoopt toch op raken, dan stopt de AI-analist netjes
+tot de volgende maand en lopen de andere strategieën door. Zet in de
+Anthropic-console een iets hogere limiet ($6) als noodrem.
+
+### De sleutel
+
+Maak een API-key aan in de Anthropic-console en zet hem in `.env`, achter
+`ANTHROPIC_API_KEY=`. Dat bestand staat in `.gitignore` en gaat nooit naar
+GitHub. Plak de sleutel nergens anders, ook niet in een chat. Zonder sleutel
+slaat de dagronde de AI-analist over en draait de rest gewoon.
 
 ---
 
@@ -220,15 +313,23 @@ paper-trading-bot/
 │   ├── statistiek.py        rendement, risico en "is dit al iets?"
 │   ├── opzet.py             zet alle strategieën klaar
 │   ├── overzicht.py         teksten over de stand (ook voor Telegram)
-│   ├── data/                koersen en wisselkoers ophalen
-│   └── strategieen/         de vier strategieën en de meetlat
+│   ├── data/                koersen, wisselkoers en nieuws ophalen
+│   ├── strategieen/         de strategieën en de meetlat
+│   └── ai/                  de AI-analist
+│       ├── rollen.py        de vijf rollen: instructies en antwoordvorm
+│       ├── analist.py       het debat en de harde controles
+│       ├── ronde.py         de dagelijkse denkronde
+│       ├── client.py        de verbinding met de Claude-API
+│       ├── budget.py        de budgetbewaking
+│       └── kostenprognose.py  past het in een maand?
 ├── scripts/
 │   ├── vernieuw_data.py     koersen ophalen
 │   ├── dagelijks.py         de dagelijkse ronde
 │   ├── stand.py             laat zien hoe het ervoor staat
+│   ├── ai_kosten.py         wat de AI echt kost
 │   ├── backtest.py          de backtest
 │   └── herstart_meting.py   opnieuw beginnen (wist alles)
-└── tests/                   66 tests
+└── tests/                   96 tests
 ```
 
 ### Wanneer begint de meting
@@ -250,3 +351,11 @@ later van start dan de rest. Nu beginnen ze allemaal tegelijk.
   ook nooit iets persoonlijks in.
 * **ccxt wordt zonder sleutels gebruikt**, dus alleen voor publieke koersen.
   Een test controleert dat er alleen leesopdrachten in staan.
+* **De bot leest alleen de sleutels voor Claude en Telegram.** Een test valt om
+  zodra er ergens een andere sleutel wordt gelezen, bijvoorbeeld een van een
+  beurs of broker.
+* **De Claude-sleutel gaat niet door de code van de bot.** De officiële
+  bibliotheek van Anthropic leest hem zelf uit de omgeving, zodat hij nergens in
+  een logregel of foutmelding kan belanden.
+* **Vaste versies.** `requirements.txt` legt de versie van elk pakket vast,
+  zodat een update halverwege de meting niet ongemerkt iets verandert.

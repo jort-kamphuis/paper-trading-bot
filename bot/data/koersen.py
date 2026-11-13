@@ -18,6 +18,25 @@ VALUTA_AANDEEL = "USD"
 VALUTA_CRYPTO = "USD"
 
 
+def eerste_onaffe_dag_aandelen(nu: datetime | None = None) -> str:
+    """De eerste beursdag waarvan de slotkoers nog niet vaststaat.
+
+    De Amerikaanse beurs sluit om 16:00 in New York. Tot 17:00 daar (een uur
+    marge voor late correcties) is de dag van vandaag dus nog niet af.
+    """
+    from zoneinfo import ZoneInfo
+
+    ny = (nu or datetime.now(timezone.utc)).astimezone(ZoneInfo("America/New_York"))
+    if ny.hour >= 17:
+        return (ny.date() + timedelta(days=1)).isoformat()
+    return ny.date().isoformat()
+
+
+def eerste_onaffe_dag_crypto(nu: datetime | None = None) -> str:
+    """Een cryptodag loopt van 00:00 tot 24:00 UTC. Vandaag is dus nog niet af."""
+    return (nu or datetime.now(timezone.utc)).astimezone(timezone.utc).date().isoformat()
+
+
 def _naar_datumtekst(waarde) -> str:
     """Maak van een tijdstempel een datum in de vorm JJJJ-MM-DD."""
     if isinstance(waarde, str):
@@ -55,6 +74,8 @@ def haal_aandelen(
 
     rijen: list[dict] = []
     heeft_multi = isinstance(ruw.columns, pd.MultiIndex)
+    # Een dag die nog bezig is, heeft nog geen echte slotkoers. Die laten we weg.
+    onaf_vanaf = eerste_onaffe_dag_aandelen()
 
     for symbool in symbolen:
         if heeft_multi:
@@ -73,10 +94,13 @@ def haal_aandelen(
 
         deel = deel.dropna(subset=["Open", "Close"])
         for stempel, rij in deel.iterrows():
+            datum = _naar_datumtekst(stempel)
+            if datum >= onaf_vanaf:
+                continue
             rijen.append(
                 {
                     "symbool": symbool,
-                    "datum": _naar_datumtekst(stempel),
+                    "datum": datum,
                     "open": float(rij["Open"]),
                     "hoog": float(rij["High"]) if pd.notna(rij.get("High")) else None,
                     "laag": float(rij["Low"]) if pd.notna(rij.get("Low")) else None,
@@ -116,6 +140,9 @@ def haal_crypto(
     )
     rijen: list[dict] = []
     gebruikt: dict[str, str] = {}
+    # De beurs geeft ook de dag die nog bezig is, met als "slotkoers" de koers
+    # van dit moment. Die is niet af, dus die laten we weg.
+    onaf_vanaf = eerste_onaffe_dag_crypto()
 
     for paar in paren:
         for beursnaam in beurzen:
@@ -129,6 +156,8 @@ def haal_crypto(
                 continue
             for tijd, o, h, l, c, v in bars:
                 datum = datetime.fromtimestamp(tijd / 1000, tz=timezone.utc).date().isoformat()
+                if datum >= onaf_vanaf:
+                    continue
                 rijen.append(
                     {
                         "symbool": paar,

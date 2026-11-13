@@ -25,8 +25,14 @@ def bouw_motor(
     wisselkoers,
     begin: str,
     stil: bool = True,
+    met_ai: bool = False,
 ) -> Motor:
-    """Maak de motor met alle regelstrategieën en de meetlatten."""
+    """Maak de motor met alle regelstrategieën en de meetlatten.
+
+    met_ai staat standaard uit. De backtest mag de AI-analist nooit meenemen:
+    het nieuws van toen is niet meer op te halen, dus elke AI-beslissing over
+    het verleden zou gebaseerd zijn op nieuws van later.
+    """
     motor = Motor(con, cfg, markt, wisselkoers)
 
     symbolen = conf.alle_symbolen(cfg)
@@ -45,4 +51,16 @@ def bouw_motor(
             elif not stil:
                 print(f"Meetlat {symbool} overgeslagen: geen koersen")
 
+    if met_ai:
+        from bot.ai.ronde import ai_portefeuilles
+        from bot.strategieen.ai_analist import AIStrategie
+
+        ai_symbolen = [s for s in cfg.get("ai_watchlist", []) if markt.heeft(s)]
+        for naam, model in ai_portefeuilles(cfg):
+            motor.voeg_toe(AIStrategie(naam, model_override=model), ai_symbolen, gestart_op=begin)
+
     return motor
+
+
+def ai_symbolen(cfg: dict, markt: Markt) -> list[str]:
+    return [s for s in cfg.get("ai_watchlist", []) if markt.heeft(s)]

@@ -63,6 +63,35 @@ def test_geen_order_opdrachten():
     )
 
 
+TOEGESTANE_SLEUTELS = {"ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"}
+
+
+def test_alleen_bekende_sleutels_worden_gelezen():
+    """De bot leest alleen de sleutel voor Claude en die voor Telegram.
+
+    Komt er ooit een sleutel bij voor een beurs of een broker, dan valt deze
+    test om. Dat is de bedoeling.
+    """
+    import re
+
+    gelezen: set[str] = set()
+    for bestand in python_bestanden():
+        if bestand.name in UITZONDERINGEN:
+            continue
+        tekst = bestand.read_text(encoding="utf-8")
+        gelezen.update(re.findall(r"sleutel\(\s*[\"']([A-Z0-9_]+)[\"']", tekst))
+        gelezen.update(re.findall(r"environ(?:\.get)?\(\s*[\"']([A-Z0-9_]+)[\"']", tekst))
+        gelezen.update(re.findall(r"environ\[\s*[\"']([A-Z0-9_]+)[\"']\s*\]", tekst))
+    onbekend = gelezen - TOEGESTANE_SLEUTELS
+    assert not onbekend, f"de bot leest een onbekende sleutel: {sorted(onbekend)}"
+
+
+def test_env_voorbeeld_bevat_alleen_bekende_sleutels():
+    regels = (PROJECT / ".env.example").read_text(encoding="utf-8").splitlines()
+    namen = {r.split("=", 1)[0].strip() for r in regels if "=" in r and not r.lstrip().startswith("#")}
+    assert namen <= TOEGESTANE_SLEUTELS, f"onbekende sleutel in .env.example: {namen - TOEGESTANE_SLEUTELS}"
+
+
 def test_ccxt_wordt_zonder_sleutels_gebruikt():
     """ccxt mag alleen koersen ophalen, dus zonder sleutels aangemaakt worden."""
     bron = (PROJECT / "bot" / "data" / "koersen.py").read_text(encoding="utf-8")

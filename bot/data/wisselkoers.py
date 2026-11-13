@@ -18,12 +18,19 @@ def haal_eurusd(symbool: str, start: str, eind: str | None = None) -> list[dict]
     )
     if ruw is None or len(ruw) == 0:
         return []
+    from datetime import datetime, timezone
+
+    # Vandaag is nog niet af: de koers van dit moment is geen dagkoers.
+    vandaag = datetime.now(timezone.utc).date().isoformat()
     rijen = []
     for stempel, rij in ruw.iterrows():
         slot = rij.get("Close")
         if pd.isna(slot) or float(slot) <= 0:
             continue
-        rijen.append({"datum": stempel.date().isoformat(), "eurusd": float(slot)})
+        datum = stempel.date().isoformat()
+        if datum >= vandaag:
+            continue
+        rijen.append({"datum": datum, "eurusd": float(slot)})
     return rijen
 
 

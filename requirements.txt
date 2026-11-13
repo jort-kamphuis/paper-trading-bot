@@ -1,10 +1,14 @@
-# Stap 1: data, regelstrategieën en backtest
-pandas
-numpy
-yfinance
-ccxt
-pyyaml
-python-dotenv
-requests
-feedparser
-pytest
+# Vaste versies, zodat de bot elke nacht met precies dezelfde software draait.
+# Zonder vaste versies kan een update halverwege de meting ongemerkt iets
+# veranderen. Bijwerken mag, maar doe het bewust en draai daarna de tests.
+pandas==3.1.1
+numpy==2.5.4
+yfinance==1.8.0
+ccxt==4.5.64
+pyyaml==6.0.3
+python-dotenv==1.2.4
+requests==2.34.2
+feedparser==6.0.14
+pytest==9.2.0
+anthropic==2.8.0
+tzdata==2026.6

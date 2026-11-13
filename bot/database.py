@@ -126,7 +126,29 @@ CREATE TABLE IF NOT EXISTS nieuws (
     samenvatting TEXT,
     bron        TEXT,
     url         TEXT,
+    opgehaald_op TEXT,
     UNIQUE (symbool, datum, titel)
+);
+
+-- Elke beslissing van de AI-analist, met wat hij zag en waarom hij koos.
+-- Bestaat er voor een portefeuille, symbool en dag al een besluit, dan wordt
+-- de API niet opnieuw aangeroepen. Twee keer draaien kost dus geen extra geld.
+CREATE TABLE IF NOT EXISTS ai_besluiten (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    portefeuille  TEXT NOT NULL,
+    symbool       TEXT NOT NULL,
+    datum         TEXT NOT NULL,
+    actie         TEXT NOT NULL,          -- KOOP, VERKOOP of NIETS
+    onderbouwing  TEXT,
+    zekerheid     REAL,
+    stappen       TEXT,                   -- JSON: wat elke rol zei
+    koppen        TEXT,                   -- JSON: de nieuwskoppen die hij zag
+    koppen_gezien INTEGER,
+    kosten_usd    REAL,
+    overgeslagen  TEXT,                   -- waarom er geen volledig debat was
+    nieuws_tot    TEXT NOT NULL,          -- alleen nieuws van voor dit moment
+    gemaakt_op    TEXT NOT NULL,
+    UNIQUE (portefeuille, symbool, datum)
 );
 
 -- Kosten van de Claude-API, om het maandbudget te bewaken (stap 3).
@@ -156,8 +178,29 @@ def verbind(pad: Path | str | None = None) -> sqlite3.Connection:
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     con.executescript(SCHEMA)
+    _vul_ontbrekende_kolommen_aan(con)
     con.commit()
     return con
+
+
+# Kolommen die later zijn bijgekomen. CREATE TABLE IF NOT EXISTS raakt een
+# bestaande tabel niet aan, dus een database van voor die wijziging mist ze.
+LATERE_KOLOMMEN: dict[str, dict[str, str]] = {
+    "nieuws": {"opgehaald_op": "TEXT"},
+}
+
+
+def _vul_ontbrekende_kolommen_aan(con: sqlite3.Connection) -> None:
+    """Voeg kolommen toe die in een oudere database nog ontbreken."""
+    for tabel, kolommen in LATERE_KOLOMMEN.items():
+        bestaand = {
+            r["name"] for r in con.execute(f"PRAGMA table_info({tabel})").fetchall()
+        }
+        if not bestaand:
+            continue  # de tabel bestaat nog niet; het schema maakt hem straks
+        for naam, soort in kolommen.items():
+            if naam not in bestaand:
+                con.execute(f"ALTER TABLE {tabel} ADD COLUMN {naam} {soort}")
 
 
 def bewaar_koersen(con: sqlite3.Connection, rijen: list[dict]) -> int:
@@ -174,6 +217,35 @@ def bewaar_koersen(con: sqlite3.Connection, rijen: list[dict]) -> int:
     )
     con.commit()
     return len(rijen)
+
+
+def verwijder_onaffe_dagen(
+    con: sqlite3.Connection,
+    aandelen: list[str],
+    crypto: list[str],
+    onaf_aandelen: str,
+    onaf_crypto: str,
+) -> int:
+    """Haal koersen weg van dagen die nog niet af waren toen ze werden opgehaald.
+
+    Zo'n dag heeft als "slotkoers" de koers van dat moment. Die wordt bij een
+    volgende ophaalronde niet vanzelf vervangen (we halen onaffe dagen niet meer
+    op), dus moet hij hier weg.
+    """
+    weg = 0
+    for symbolen, grens in ((aandelen, onaf_aandelen), (crypto, onaf_crypto)):
+        if not symbolen:
+            continue
+        plekken = ",".join("?" * len(symbolen))
+        cur = con.execute(
+            f"DELETE FROM koersen WHERE datum >= ? AND symbool IN ({plekken})",
+            (grens, *symbolen),
+        )
+        weg += cur.rowcount
+    cur = con.execute("DELETE FROM wisselkoersen WHERE datum >= ?", (onaf_crypto,))
+    weg += cur.rowcount
+    con.commit()
+    return weg
 
 
 def bewaar_wisselkoersen(con: sqlite3.Connection, rijen: list[dict]) -> int:

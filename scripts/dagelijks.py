@@ -52,6 +52,72 @@ def _haal_data_op(jaren: float) -> bool:
     return True
 
 
+def _ai_ronde(con, cfg: dict, markt: Markt, datum: str, nieuw_nieuws: bool, ingehaald: int) -> None:
+    """Laat de AI-analist nadenken over de nieuwste dag.
+
+    Gaat er hier iets mis (geen sleutel, budget op, API onbereikbaar), dan
+    stopt alleen de AI-analist. De rest van de bot heeft zijn werk al gedaan.
+    """
+    from bot.ai.budget import Budget
+    from bot.ai.ronde import ai_portefeuilles, denk_na, maak_client
+    from bot.data import nieuws as mod_nieuws
+    from bot.opzet import ai_symbolen
+
+    portefeuilles = ai_portefeuilles(cfg)
+    if not portefeuilles:
+        return
+
+    print("\nAI-analist")
+    print("-" * 60)
+
+    if ingehaald > 1:
+        print(
+            f"Er zijn {ingehaald} dagen ingehaald. De AI-analist beslist alleen over de\n"
+            f"nieuwste ({datum}): het nieuws van eerdere dagen is niet meer op te halen,\n"
+            f"en met nieuws van later beslissen zou vooruitkijken zijn."
+        )
+
+    try:
+        import anthropic  # noqa: F401
+    except ImportError:
+        print("Overgeslagen: het pakket 'anthropic' is niet geïnstalleerd.")
+        return
+    if not conf.sleutel("ANTHROPIC_API_KEY"):
+        print("Overgeslagen: geen ANTHROPIC_API_KEY gevonden (zie .env.example).")
+        return
+
+    budget = Budget(con, cfg)
+    if budget.is_op():
+        print(budget.samenvatting())
+        print("Het budget van deze maand is op. De AI-analist slaat vandaag over.")
+        return
+
+    symbolen = ai_symbolen(cfg, markt)
+    if nieuw_nieuws:
+        aantal = mod_nieuws.vernieuw(con, symbolen)
+        print(f"{aantal} nieuwskoppen opgehaald voor {len(symbolen)} symbolen.")
+
+    client = maak_client(con, cfg)
+    for naam, model in portefeuilles:
+        print(f"\n  {naam}" + (f" (alles op {model})" if model else ""))
+        uitkomst = denk_na(con, cfg, client, markt, naam, datum, symbolen, model_override=model)
+        if uitkomst.al_gedaan:
+            print(f"    {uitkomst.al_gedaan} symbolen waren vandaag al beoordeeld; niet opnieuw betaald.")
+        print(
+            f"    {len(uitkomst.orders)} orders klaargezet, kosten ${uitkomst.kosten_usd:.4f}"
+        )
+        if uitkomst.gestopt:
+            print(f"    GESTOPT: {uitkomst.gestopt}")
+            break
+
+    from bot.ai.kostenprognose import als_tekst, maak_prognose
+
+    print()
+    print(budget.samenvatting())
+    print()
+    print(als_tekst(maak_prognose(con, cfg)))
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description="De dagelijkse ronde van de bot")
     p.add_argument("--geen-data", action="store_true", help="koersen niet ophalen")
@@ -59,6 +125,7 @@ def main() -> int:
     p.add_argument("--tot", default=None, help="tot en met deze datum (JJJJ-MM-DD)")
     p.add_argument("--db", default=None, help="pad naar de database")
     p.add_argument("--start", default=None, help="startdatum van de meting vastleggen")
+    p.add_argument("--geen-ai", action="store_true", help="de AI-analist overslaan")
     args = p.parse_args()
 
     cfg = conf.laad()
@@ -111,7 +178,9 @@ def main() -> int:
         print(f"\nDe meting loopt sinds {start}.")
 
     # ---- 3. de motor ----
-    motor = bouw_motor(con, cfg, markt, wk, begin=start, stil=False)
+    motor = bouw_motor(
+        con, cfg, markt, wk, begin=start, stil=False, met_ai=bool(cfg.get("ai", {}).get("actief"))
+    )
     print(f"{len(motor.deelnemers)} portefeuilles.")
 
     # Begin bij de oudste dag die nog niet voor iedereen af is.
@@ -127,17 +196,19 @@ def main() -> int:
     te_doen = [d for d in markt.datums if vanaf <= d <= tot]
     print(f"Te verwerken: {vanaf} tot en met {tot} ({len(te_doen)} dagen in de data).")
 
-    if not te_doen:
-        print("\nNiets te doen: er is nog geen nieuwe koersdag.")
-        con.close()
-        return 0
-
     # ---- 4. draaien ----
-    motor.draai_periode(vanaf, tot, stil=True)
-    if motor.overgeslagen_dagen:
-        print(f"{motor.overgeslagen_dagen} dagstanden waren al verwerkt en overgeslagen.")
+    if te_doen:
+        motor.draai_periode(vanaf, tot, stil=True)
+        if motor.overgeslagen_dagen:
+            print(f"{motor.overgeslagen_dagen} dagstanden waren al verwerkt en overgeslagen.")
+    else:
+        print("Geen nieuwe koersdag voor de motor.")
 
-    # ---- 5. het dagbericht ----
+    # ---- 5. de AI-analist ----
+    if not args.geen_ai:
+        _ai_ronde(con, cfg, markt, tot, nieuw_nieuws=not args.geen_data, ingehaald=len(te_doen))
+
+    # ---- 6. het dagbericht ----
     print("\n" + "=" * 60)
     print(overzicht.dagbericht(con, tot))
     print("=" * 60)

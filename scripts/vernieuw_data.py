@@ -85,6 +85,17 @@ def main() -> int:
     aantal = database.bewaar_wisselkoersen(con, rijen)
     print(f"  {aantal} dagen opgeslagen")
 
+    # ---- onaffe dagen weg ----
+    weg = database.verwijder_onaffe_dagen(
+        con,
+        aandelen,
+        crypto,
+        onaf_aandelen=mod_koersen.eerste_onaffe_dag_aandelen(),
+        onaf_crypto=mod_koersen.eerste_onaffe_dag_crypto(),
+    )
+    if weg:
+        print(f"\n{weg} koersen van een dag die nog niet af was, weggehaald.")
+
     # ---- overzicht ----
     print("\nIn de database:")
     rij = con.execute(

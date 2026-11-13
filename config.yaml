@@ -126,6 +126,73 @@ strategieen:
       - SPY
       - BTC/USDT
 
+ai:
+  actief: true
+
+  # Welk model elke rol gebruikt. Wisselen is hier een woord aanpassen.
+  # De eerste twee rollen lezen vooral cijfers en koppen; dat is werk waar een
+  # klein model prima in is. Het debat en de eindbeslissing zijn oordeelswerk.
+  rollen:
+    technisch:  claude-haiku-5-5
+    nieuws:     claude-haiku-5-5
+    bull:       claude-sonnet-5-5
+    bear:       claude-sonnet-5-5
+    risk:       claude-sonnet-5-5
+
+  # Een tweede AI-portefeuille die alles op het goedkoopste model doet, met
+  # exact dezelfde instructies en dezelfde data. Zo meet je of het duurdere
+  # model zijn geld waard is. Kost ongeveer 20 cent per maand extra.
+  controle_portefeuille:
+    actief: true
+    model: claude-haiku-5-5
+
+  # Het plafond per antwoord. Dit is een vangnet, geen kostenknop: je betaalt
+  # alleen voor wat het model echt schrijft, en hoe lang dat is, stuurt de
+  # instructie ("hooguit vier zinnen"). Zet dit niet te krap. Het denkwerk telt
+  # hier ook in mee, en raakt een antwoord het plafond, dan wordt het afgekapt,
+  # is het onbruikbaar en heb je er toch voor betaald.
+  max_tokens:
+    technisch: 1000
+    nieuws:    1000
+    bull:      3000
+    bear:      3000
+    risk:      4000
+
+  # Denkwerk vooraf. Uit bij het verzamelen (daar valt niets te overwegen),
+  # aan bij het oordeel. Let op: denktokens tellen mee als uitvoer en kosten
+  # dus geld. Claude Sonnet 5.5 staat geen 'uit' toe, daar is 'low' de zuinigste.
+  denkwerk:
+    technisch: {denken: uit,  inspanning: low}
+    nieuws:    {denken: uit,  inspanning: low}
+    bull:      {denken: aan,  inspanning: low}
+    bear:      {denken: aan,  inspanning: low}
+    risk:      {denken: aan,  inspanning: medium}
+
+  budget:
+    # De bot stopt zelf als dit bedrag deze maand op is, en meldt dat.
+    # 5,50 dollar is ongeveer 5 euro (bij 1,10 dollar per euro). De API rekent
+    # in dollars, dus het budget staat ook in dollars.
+    # Zet in de Anthropic-console een iets hogere limiet (bijvoorbeeld 6 dollar)
+    # als noodrem, zodat de bot eerst netjes zelf kan stoppen.
+    max_usd_per_maand: 5.50
+    # Onder dit bedrag aan resterend budget begint de bot alvast te waarschuwen.
+    waarschuw_onder_usd: 1.00
+
+  nieuws:
+    # Hoeveel koppen de nieuwsanalist per symbool te zien krijgt.
+    max_koppen: 8
+    # Alleen koppen van de laatste zoveel dagen.
+    max_dagen_oud: 3
+
+# Prijzen per miljoen tokens, in dollars. Hiermee rekent de bot zijn eigen
+# kosten uit, want de API vertelt alleen hoeveel tokens er zijn gebruikt.
+# Bron: de prijslijst van Anthropic, overgenomen op 2026-11-13. Controleer dit
+# als je een ander model kiest of als er lang overheen is gegaan.
+prijzen:
+  claude-haiku-5-5:  {invoer: 0.10, uitvoer: 0.50}
+  claude-sonnet-5-5: {invoer: 2.00, uitvoer: 10.00}
+  claude-opus-5-5:   {invoer: 4.00, uitvoer: 20.00}
+
 rapport:
   # Het symbool dat de meetkalender bepaalt: de dagen dat de Amerikaanse beurs
   # open was. Daarop beginnen alle portefeuilles tegelijk, en daarop worden de

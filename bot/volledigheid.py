@@ -15,6 +15,37 @@ from bot import config as conf
 from bot.markt import Markt
 
 
+def beurs_open_volgens_kalender(cfg: dict, dag: str) -> bool:
+    """Was de NYSE op deze dag open? False voor weekend, feestdag of een jaar zonder kalender."""
+    from datetime import date
+
+    d = date.fromisoformat(dag)
+    if d.weekday() >= 5:
+        return False
+    feestdagen = ((cfg.get("beurskalender") or {}).get("feestdagen") or {})
+    lijst = feestdagen.get(d.year, feestdagen.get(str(d.year)))
+    if lijst is None:
+        return False  # geen kalender voor dit jaar: niet controleren
+    return dag not in {str(x) for x in lijst}
+
+
+def verdwenen_grens(cfg: dict) -> int:
+    return int((cfg.get("beurskalender") or {}).get("verdwenen_na_beursdagen", 3))
+
+
+def gemiste_beursdagen(markt: Markt, symbool: str, dag: str, kalender: str) -> int:
+    """Hoeveel beursdagen (van de kalender-SPY) tot en met 'dag' achter elkaar zonder koers."""
+    if not markt.heeft(symbool):
+        return 0
+    eigen = set(markt.handelsdagen_van(symbool))
+    teller = 0
+    for d in reversed([x for x in markt.handelsdagen_van(kalender) if x <= dag]):
+        if d in eigen:
+            break
+        teller += 1
+    return teller
+
+
 def _verdachte_sprong(markt: Markt, symbool: str, dag: str) -> str | None:
     """Een aandeel dat in een dag halveert of verdubbelt, zonder splitsing: dat klopt niet.
 
@@ -61,10 +92,17 @@ def controleer(markt: Markt, cfg: dict, dagen: list[str]) -> list[str]:
     for symbool in crypto:
         cryptodagen.update(markt.handelsdagen_van(symbool))
 
+    verdwenen_na = verdwenen_grens(cfg)
     for dag in dagen:
+        if beurs_open_volgens_kalender(cfg, dag) and dag not in beursdagen:
+            problemen.append(
+                f"{kalender}: geen koers op {dag}, terwijl de beurs volgens de NYSE-kalender open was"
+            )
         if dag in beursdagen:
             for symbool in aandelen:
                 if markt.heeft(symbool) and markt.bar(symbool, dag) is None:
+                    if gemiste_beursdagen(markt, symbool, dag, kalender) >= verdwenen_na:
+                        continue  # verdwenen: de motor sluit de positie, de handel gaat door
                     problemen.append(f"{symbool}: geen koers op {dag}, terwijl {kalender} die dag wel handelde")
                     continue
                 sprong = _verdachte_sprong(markt, symbool, dag)

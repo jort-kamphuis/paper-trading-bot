@@ -30,6 +30,10 @@ class Antwoord:
     usd: float = 0.0
     geweigerd: bool = False
     afgekapt: bool = False
+    # Het model dat de API zegt te hebben gebruikt, en het nummer van het verzoek.
+    # Zo is een stille wissel van model achteraf aan te tonen.
+    model_antwoord: str | None = None
+    verzoek_id: str | None = None
 
     def probleem(self) -> str | None:
         """Waarom dit antwoord onbruikbaar is, in gewone taal. None als het goed is."""
@@ -40,6 +44,15 @@ class Antwoord:
         if not self.data:
             return f"{self.rol} gaf geen leesbaar antwoord"
         return None
+
+
+class TegoedOp(Exception):
+    """Het API-tegoed (de credits in de Anthropic-console) is op."""
+
+
+def is_tegoed_fout(fout: Exception) -> bool:
+    tekst = str(fout).lower()
+    return "credit balance" in tekst or "billing" in tekst or "insufficient credit" in tekst
 
 
 class GeenSleutel(Exception):
@@ -150,7 +163,14 @@ class ClaudeClient:
         else:
             verzoek["thinking"] = {"type": "adaptive"}
 
-        antwoord = client.messages.create(**verzoek)
+        try:
+            antwoord = client.messages.create(**verzoek)
+        except Exception as fout:
+            if is_tegoed_fout(fout):
+                raise TegoedOp(str(fout)[:200]) from None
+            raise
+        model_antwoord = getattr(antwoord, "model", None)
+        verzoek_id = getattr(antwoord, "_request_id", None) or getattr(antwoord, "id", None)
 
         tekst = "".join(
             blok.text for blok in antwoord.content if getattr(blok, "type", "") == "text"
@@ -166,7 +186,7 @@ class ClaudeClient:
             int(getattr(gebruik, "input_tokens", 0) or 0),
             int(getattr(gebruik, "output_tokens", 0) or 0),
         )
-        self.budget.boek(rol, kosten)
+        self.budget.boek(rol, kosten, model_antwoord=model_antwoord, verzoek_id=verzoek_id)
 
         data: dict[str, Any] = {}
         if schema is not None and tekst and not geweigerd and not afgekapt:
@@ -187,6 +207,8 @@ class ClaudeClient:
             usd=kosten.usd,
             geweigerd=geweigerd,
             afgekapt=afgekapt,
+            model_antwoord=model_antwoord,
+            verzoek_id=verzoek_id,
         )
 
 

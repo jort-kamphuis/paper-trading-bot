@@ -16,6 +16,11 @@ De kans gaat over een van twee vragen, die in elk bericht staat uitgeschreven:
   kalenderdagen meer dan die 0,3% kosten? De referentie is dan kas.
 Deze kans wordt voor elk symbool elke beursdag opgeslagen, met de soort vraag,
 en later per soort apart gescoord (bot/ai/kalibratie.py).
+
+De vraag gaat alleen over het symbool, niet over de eigen portefeuille: geen
+eigen positie, resultaat of bezette plekken. Dan krijgt elk symbool in elke
+AI-portefeuille precies dezelfde vraag, en hangt de kans niet af van wat de
+portefeuille toevallig al heeft (review november 2026). De code beslist toch.
 """
 
 from __future__ import annotations
@@ -215,8 +220,6 @@ def bericht_debat(
             f"  belangrijkste risico: {nieuws.get('belangrijkste_risico', '')}",
             f"  gebeurtenis binnenkort: {'ja' if nieuws.get('gebeurtenis_binnenkort') else 'nee'}",
             "",
-            _positie_tekst(positie),
-            "",
             "Geef je argument.",
         ]
     )
@@ -246,9 +249,6 @@ def bericht_risk(
             f"Bear (overtuiging {bear.get('overtuiging', 0)}): {bear.get('argument', '')}",
             f"  sterkste punt: {bear.get('sterkste_punt', '')}",
             "",
-            _positie_tekst(positie),
-            _portefeuille_tekst(portefeuille),
-            "",
             "Geef je kans en je verwachting.",
         ]
     )
@@ -268,9 +268,6 @@ def bericht_enkel(
             als_tekst(kenmerken),
             "",
             _koppen_tekst(koppen),
-            "",
-            _positie_tekst(positie),
-            _portefeuille_tekst(portefeuille),
             "",
             "Weeg de argumenten voor en tegen, en geef je kans en je verwachting.",
         ]

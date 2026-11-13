@@ -10,7 +10,7 @@ Een voorstel dat alleen in de eerdere periode beter is, past zich waarschijnlijk
 aan toevallige patronen aan; het laatste jaar is de controle daarop.
 
 Dit is nog steeds geen bewijs (zie de README over backtests). Het houdt alleen
-de slechtste ideeën tegen voordat ze vier weken lang een plek innemen.
+de slechtste ideeën tegen voordat ze acht weken lang een plek innemen.
 """
 
 from __future__ import annotations

@@ -27,7 +27,8 @@ from datetime import date, datetime, timedelta, timezone
 from bot.ai import beslisregel
 from bot.ai.analist import AIAnalist, Beoordeling
 from bot.ai.budget import Budget, BudgetOp
-from bot.ai.client import ClaudeClient
+from bot.ai.client import ClaudeClient, TegoedOp
+from bot.ai.kostenprognose import GEEN_KOERS
 from bot.config import is_crypto
 from bot.markt import Markt
 from bot.portefeuille import Portefeuille
@@ -49,10 +50,14 @@ class Uitkomst:
     gestopt: str | None = None
     kosten_usd: float = 0.0
     overgeslagen: str | None = None
+    # Symbolen zonder bruikbare kans (afgekapt, geweigerd, onleesbaar, bull of bear
+    # mislukt). Dan is de nacht niet compleet en wordt er niet gekocht.
+    onbruikbaar: list[str] = field(default_factory=list)
+    tegoed_op: bool = False
 
     @property
     def compleet(self) -> bool:
-        return self.gestopt is None and not self.fouten
+        return self.gestopt is None and not self.fouten and not self.onbruikbaar
 
 
 def nieuws_grens(symbool: str, datum: str, nu: datetime | None = None) -> str:
@@ -185,6 +190,8 @@ def denk_na(
         if bestaand is not None:
             uit.al_gedaan += 1
             uit.beoordelingen[symbool] = bestaand
+            if bestaand.probleem and bestaand.probleem != GEEN_KOERS:
+                uit.onbruikbaar.append(symbool)
             continue
 
         grens = nieuws_grens(symbool, datum, nu=plafond)
@@ -197,6 +204,11 @@ def denk_na(
         except BudgetOp as fout:
             con.commit()  # wat al is uitgegeven, staat geboekt
             uit.gestopt = str(fout)
+            break
+        except TegoedOp as fout:
+            con.commit()
+            uit.tegoed_op = True
+            uit.gestopt = f"het API-tegoed is op ({fout})"
             break
         except Exception as fout:  # netwerk, API, onverwacht antwoord
             con.commit()
@@ -211,6 +223,8 @@ def denk_na(
             continue
 
         fouten_achter_elkaar = 0
+        if b.probleem and b.probleem != GEEN_KOERS:
+            uit.onbruikbaar.append(symbool)
         _bewaar_beoordeling(con, portefeuille, b, grens, horizon)
         con.commit()  # na elk symbool: het geld is uitgegeven, dus de beoordeling blijft
         uit.beoordelingen[symbool] = b

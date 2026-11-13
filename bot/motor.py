@@ -162,6 +162,7 @@ class Motor:
                 # Eerst dividend en splitsingen, dan pas de orders: wie op de
                 # ochtend van de ex-datum verkoopt, had het aandeel ervoor nog,
                 # en een verkoop na een splitsing gaat over het nieuwe aantal.
+                self._sluit_verdwenen(deelnemer, datum)
                 self._verwerk_uitkeringen(deelnemer, datum)
                 self._voer_wachtrij_uit(deelnemer, datum, stil=stil)
                 deelnemer.portefeuille.bewaar_waarde(self.con, datum, koersen_usd)
@@ -188,6 +189,39 @@ class Motor:
             else:
                 deelnemer.portefeuille.nieuwe_trades.clear()
             deelnemer.wachtrij = self._lees_wachtrij(naam)
+
+    def _sluit_verdwenen(self, deelnemer: Deelnemer, datum: str) -> None:
+        """Verkoop een aandeel dat al een paar beursdagen geen koers meer heeft.
+
+        Vooraf vastgelegde regel (config.yaml, beurskalender.verdwenen_na_beursdagen):
+        een aandeel dat van de beurs is gehaald of langdurig is stilgelegd, wordt
+        verkocht tegen de laatste bekende slotkoers. Zonder deze regel blijft zo'n
+        positie eeuwig op een oude koers staan en blokkeert hij de handel.
+        Alleen op beursdagen, en nooit voor crypto (die handelt elke dag).
+        """
+        from bot import volledigheid
+        from bot.config import is_crypto
+
+        if not self.markt.heeft(self.kalender_symbool) or not self.markt.is_handelsdag(self.kalender_symbool, datum):
+            return
+        grens = volledigheid.verdwenen_grens(self.cfg)
+        pf = deelnemer.portefeuille
+        eurusd = self.wisselkoers.op(datum) if self.wisselkoers is not None else 0.0
+        for symbool in list(pf.posities):
+            if is_crypto(symbool):
+                continue
+            if volledigheid.gemiste_beursdagen(self.markt, symbool, datum, self.kalender_symbool) < grens:
+                continue
+            laatste = self.markt.slot_op_of_voor(symbool, datum)
+            if not laatste:
+                continue
+            laatste_dag = self.markt.tot_en_met(symbool, datum).index[-1]
+            pf.verkoop(
+                symbool=symbool, datum=datum, besluit_datum=datum, open_koers=laatste, valuta="USD",
+                eurusd=eurusd,
+                reden=f"geen koers meer sinds {laatste_dag} ({grens} beursdagen): verkocht tegen de laatste slotkoers",
+            )
+            self.problemen.append(f"{pf.naam} {symbool}: geen koers meer sinds {laatste_dag}, positie gesloten")
 
     def _verwerk_uitkeringen(self, deelnemer: Deelnemer, datum: str) -> None:
         """Dividend in de kas, en na een splitsing het aantal stukken bijwerken.
@@ -232,6 +266,13 @@ class Motor:
         overblijvend: list[WachtendeOrder] = []
 
         # Verkopen eerst, zodat het geld weer beschikbaar is om te kopen.
+        # De waarde waarop de aankoopbedragen worden gebaseerd: een keer per beslisdag,
+        # voor er iets wordt uitgevoerd. Anders krijgt elk volgend symbool iets minder
+        # (de kosten van de vorige aankoop gaan er dan steeds af).
+        waarde_op = {
+            d: pf.totale_waarde(self.markt.slotkoersen_usd(d))
+            for d in {w.besluit_datum for w in deelnemer.wachtrij}
+        }
         wachtrij = sorted(
             deelnemer.wachtrij, key=lambda w: 0 if w.order.actie == "VERKOOP" else 1
         )
@@ -260,8 +301,12 @@ class Motor:
                 # (die waren bekend). Standaard 10%; de meetlatten geven zelf
                 # een gewicht mee (alles in een keer, of gelijk verdeeld).
                 gewicht = order.gewicht if order.gewicht is not None else pf.positie_pct / 100.0
-                waarde = pf.totale_waarde(self.markt.slotkoersen_usd(wachtend.besluit_datum))
+                waarde = waarde_op[wachtend.besluit_datum]
                 bedrag = gewicht * waarde
+                if order.gewicht is not None:
+                    # De meetlatten kopen alles in een keer. Houd de kosten er vooraf
+                    # af, anders krijgen de laatste symbolen minder (de kas raakt op).
+                    bedrag = bedrag / (1.0 + pf.kosten_pct / 100.0)
                 pf.koop(
                     symbool=order.symbool,
                     datum=datum,

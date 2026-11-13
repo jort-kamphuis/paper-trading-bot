@@ -46,6 +46,13 @@ def voer_uit(
 
     database.leeg_handelsdata(con_echt)
     con_echt.execute("DELETE FROM instellingen WHERE sleutel = ?", (SLEUTEL_START,))
+    # De startdag ligt vooraf vast (config.yaml, meting.start). Mislukt de eerste
+    # nacht, dan begint de meting dus toch op die dag, en niet stilletjes later.
+    from bot import config as conf
+
+    start = str((conf.laad().get("meting") or {}).get("start") or "")
+    if start:
+        database.zet_instelling(con_echt, SLEUTEL_START, start)
     con_echt.commit()
 
     regels = [

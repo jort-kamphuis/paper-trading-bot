@@ -164,13 +164,14 @@ async function tekenOverzicht(p) {
       el('div', { class: 'dim klein', text: 'Hoofdvraag, vooraf vastgelegd' }),
       el('div', { class: 'vraag', text: h.vraag }),
       el('div', { class: 'cijfers' },
-        cijfer(h.ai, pct(h.ai_rendement_pct), kleurTeken(h.ai_rendement_pct)),
-        cijfer(h.meetlat, pct(h.meetlat_rendement_pct), kleurTeken(h.meetlat_rendement_pct)),
-        cijfer('verschil', pp(h.verschil_pp), kleurTeken(h.verschil_pp)),
-        cijfer('p-waarde (blok-bootstrap)', h.p_waarde === null ? 'nog te weinig dagen' : getal(h.p_waarde, 2)),
+        cijfer(h.ai, pct(h.ai_rendement_pct) + (h.ai_belegd_pct === null ? '' : ' (' + pct(h.ai_belegd_pct, 0, false) + ' belegd)'), kleurTeken(h.ai_rendement_pct)),
+        cijfer(h.meetlat + ', even belegd: verschil', pp(h.verschil_pp), kleurTeken(h.verschil_pp)),
+        cijfer('p-waarde (eenzijdig)', h.p_waarde === null ? 'nog te weinig dagen' : getal(h.p_waarde, 2)),
         cijfer('einddatum ' + datum(h.einde), 'nog ' + h.dagen_tot_einde + ' dagen')),
+      el('p', { class: 'klein', style: 'margin:8px 0 0' },
+        el('span', { class: 'dim', text: 'Ter vergelijking, niet de hoofdvraag: ' + h.meetlat + ' zelf ' + pct(h.meetlat_rendement_pct) + ', verschil ' + pp(h.ruw_verschil_pp) + (h.ruw_p_waarde === null ? '' : ', p ' + getal(h.ruw_p_waarde, 2)) + '.' })),
       el('p', { style: 'margin:10px 0 0' }, el('span', { class: 'pil ' + cls, text: tekstLabel })),
-      el('p', { class: 'dim klein', style: 'margin:6px 0 0', text: 'Tot de einddatum blijft dit "nog niet te zeggen", ook bij een lage p-waarde: elke dag kijken en bij het eerste mooie getal stoppen maakt de toets waardeloos. Daarna "ja" bij een hoger rendement en een p-waarde van 0,05 of lager, anders "nee".' })));
+      el('p', { class: 'dim klein', style: 'margin:6px 0 0', text: 'De meetlat staat elke dag even veel belegd als ' + h.ai + ' de dag ervoor, de rest in kas. Zo meet het verschil het kiezen, en niet hoeveel geld er in kas staat. Tot de koers van de einddatum er is, blijft dit "nog niet te zeggen", ook bij een lage p-waarde. Daarna "ja" bij een hoger rendement en een p-waarde van 0,05 of lager, anders "nee". Er wordt nooit verder gerekend dan de einddatum.' })));
   }
 
   if (ov.ai_vandaag && ov.ai_vandaag.length) {
@@ -179,7 +180,7 @@ async function tekenOverzicht(p) {
       el('h3', { text: 'AI vandaag (' + datum(d) + ')' }),
       el('div', { class: 'cijfers' }, ov.ai_vandaag.map(a =>
         el('div', { class: 'cijfer' }, el('div', { class: 'naam', text: a.portefeuille }),
-          el('div', { style: 'font-size:13px', text: a.beoordeeld + ' beoordeeld, ' + a.kopen + ' kopen, ' + a.verkopen + ' verkopen' }))))));
+          el('div', { style: 'font-size:13px', text: a.beoordeeld + ' beoordeeld, ' + a.kopen + ' kopen, ' + a.verkopen + ' verkopen' + (a.gemist ? '; ' + a.gemist + ' beursdagen gemist sinds de start' : '') }))))));
   }
 
   const hoofdAi = h ? h.ai : null;
@@ -265,7 +266,7 @@ async function tekenKansen(p) {
   const ka = await laad(pad('kansen.json'));
   const delen = [el('div', { class: 'paneel' },
     el('h2', { text: 'Klopten de kansen?' }),
-    el('p', { text: 'Elke beursdag geeft de AI per symbool een kans. Na ' + ka.horizon_dagen + ' dagen kijkt de bot wat er echt gebeurde: kwam het uit, na ' + getal(ka.kosten_pct, 1) + '% kosten? De Brier-score is het gemiddelde van (kans min uitkomst) in het kwadraat. Lager is beter; altijd 0,5 zeggen geeft ' + getal(ka.brier_geen_idee, 3) + '.' }),
+    el('p', { text: 'Elke beursdag geeft de AI per symbool een kans. Na ' + ka.horizon_dagen + ' dagen kijkt de bot wat er echt gebeurde, gerekend vanaf de opening waarop hij zou kopen, met dividend: kwam het uit, na ' + getal(ka.kosten_pct, 1) + '% kosten? De Brier-score is het gemiddelde van (kans min uitkomst) in het kwadraat. Lager is beter. Altijd 0,5 zeggen geeft ' + getal(ka.brier_geen_idee, 3) + '; de eerlijkere lat is "altijd de basiskans": wie steeds zegt hoe vaak het in het algemeen uitkomt. Pas onder die lat weet de AI iets. Kansen op opeenvolgende dagen overlappen, dus er zijn minder onafhankelijke waarnemingen dan het aantal doet lijken.' }),
     el('p', { text: 'Kalibratie: zegt de AI honderd keer 0,6, dan hoort het ongeveer zestig keer uit te komen. Punten op de stippellijn zijn goed gekalibreerd. Grijze punten hebben minder dan 10 kansen en zeggen nog weinig.' }),
     el('p', { class: 'dim', text: 'De twee soorten vraag staan apart, want het zijn verschillende vragen: relatief (beter dan SPY of BTC) en absoluut (SPY en BTC zelf: stijgen ze meer dan de kosten?).' }))];
   if (!ka.groepen.length) delen.push(leeg('Nog geen kansen van de AI.'));
@@ -281,7 +282,7 @@ async function tekenKansen(p) {
       } else {
         const breedte = Math.max(0, Math.min(100, g.brier / 0.5 * 100));
         kaart.append(
-          el('div', { class: 'cijfers', style: 'margin-top:8px' }, cijfer('Brier', getal(g.brier, 3), g.brier < ka.brier_geen_idee ? 'pos' : 'neg'), cijfer('gescoord', String(g.n)), cijfer('gemiddelde kans', getal(g.gem_kans, 2)), cijfer('kwam uit', pct(g.kwam_uit_pct, 0, false))),
+          el('div', { class: 'cijfers', style: 'margin-top:8px' }, cijfer('Brier', getal(g.brier, 3), g.brier < g.brier_basiskans ? 'pos' : 'neg'), cijfer('altijd de basiskans', getal(g.brier_basiskans, 3)), cijfer('gescoord', String(g.n)), cijfer('gemiddelde kans', getal(g.gem_kans, 2)), cijfer('kwam uit', pct(g.kwam_uit_pct, 0, false))),
           el('div', { class: 'balk', title: 'Brier tegen 0,25' }, el('div', { style: 'width:' + breedte + '%' })),
           el('div', { class: 'dim klein', text: 'de streep tot halverwege is 0,250 (geen idee)' }),
           kalibratieSvg(g.vakken),
@@ -592,7 +593,8 @@ async function tekenKosten(p) {
     el('div', { class: 'paneel' }, el('h2', { text: 'AI-kosten in ' + k.maand }),
       el('div', { class: 'cijfers' }, cijfer('uitgegeven', dollar(k.uitgegeven_usd, 2)), cijfer('budget', dollar(k.budget_usd, 2)), cijfer('over', dollar(Math.max(0, k.budget_usd - k.uitgegeven_usd), 2))),
       el('div', { class: 'balk' }, el('div', { style: 'width:' + deel + '%;background:' + (deel > 85 ? '#ef5350' : '#2962ff') })),
-      el('p', { class: 'dim klein', style: 'margin:6px 0 0', text: 'Correcties (kosten buiten de bot om, zoals een rooktest) tellen mee in het budget. Raakt het budget op, dan koopt de AI niets nieuws meer tot de volgende maand.' })),
+      el('p', { class: 'dim klein', style: 'margin:6px 0 0', text: 'Correcties (kosten buiten de bot om, zoals een rooktest) tellen mee in het budget. Raakt het budget op, dan koopt de AI niets nieuws meer tot de volgende maand.' }),
+      el('p', { class: 'klein ' + (k.ander_model ? 'neg' : 'dim'), style: 'margin:6px 0 0', text: k.ander_model ? 'Let op: ' + k.ander_model + ' antwoorden kwamen van een ander model dan gevraagd.' : 'Alle antwoorden kwamen van het gevraagde model (of zijn van voor deze controle).' })),
     el('div', { class: 'paneel' }, el('h3', { text: 'Per dag' }), houder),
     el('div', { class: 'paneel' }, el('h3', { text: 'Per rol en model, ' + k.maand }), maand.length ? el('div', { class: 'schuif' }, el('table', { class: 'tabel' },
       el('thead', null, el('tr', null, el('th', { text: 'rol' }), el('th', { text: 'model' }), el('th', { class: 'getal', text: 'aanroepen' }), el('th', { class: 'getal', text: 'kosten' }))),

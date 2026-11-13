@@ -183,7 +183,8 @@ ai:
     # Het budget is zo gekozen dat het niet op hoort te raken. Raakt het toch
     # op, dan koopt de AI niets nieuws meer; posities worden na hun houdtijd door
     # de code verkocht. Er wordt niet halverwege de maand van model gewisseld.
-    # In de Anthropic-console staat de limiet op 40 dollar als noodrem.
+    # De credits zijn in een keer gekocht voor de hele meting, met automatisch
+    # opwaarderen uit: het tegoed zelf is de noodrem. Is het op, dan meldt de bot dat.
     max_usd_per_maand: 35.00
     waarschuw_onder_usd: 5.00
 
@@ -204,7 +205,10 @@ challenger:
   # Een voorstel moet eerst een backtest doorstaan (kiezen op de eerdere jaren,
   # controleren op het laatste jaar), draait dan als eerlijk A/B-paar, en gaat
   # na /akkoord verder als NIEUWE portefeuille. Het origineel blijft ongewijzigd.
-  weken: 4
+  # 8 weken: ongeveer 40 beursdagen. Met minder heeft de toets te weinig blokken
+  # van 10 dagen voor een eerlijke uitspraak (review november 2026); dan loopt
+  # de proef door tot het wel kan.
+  weken: 8
   # Pas "beter" bij een betekenisvol verschil: B boven A en p-waarde hieronder.
   betekenisvol_p: 0.05
   model: claude-sonnet-5-5
@@ -255,3 +259,19 @@ dashboard:
   url: https://jort-kamphuis.github.io/paper-trading-bot/
   # Hoeveel kalenderdagen koersgeschiedenis de grafiek per symbool toont.
   symbool_dagen: 365
+
+beurskalender:
+  # De NYSE: dagen dat de beurs de hele dag dicht is. Op elke andere weekdag
+  # MOET er een SPY-koers zijn; ontbreekt die, dan handelt de bot die nacht niet
+  # (anders zou zo'n dag stil als feestdag worden verwerkt). Jaren die hier niet
+  # staan, worden niet gecontroleerd.
+  # Bron: https://www.nyse.com/trade/hours-calendars (overgenomen op 2026-11-13).
+  feestdagen:
+    2026: ["2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25",
+           "2026-06-19", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25"]
+    2027: ["2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31",
+           "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24"]
+  # Een aandeel dat zoveel beursdagen achter elkaar geen koers heeft (van de beurs
+  # gehaald, langdurig stilgelegd), blokkeert de handel niet langer. Een positie
+  # erin wordt dan verkocht tegen de laatste slotkoers. Vooraf vastgelegd.
+  verdwenen_na_beursdagen: 3

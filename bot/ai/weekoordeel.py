@@ -28,7 +28,7 @@ SYSTEEM = (
     "deel van hun geld belegd hebben.\n\n"
     "Daarnaast mag je hooguit een verbetering voorstellen: een instelling van een "
     "regelstrategie aanpassen, alleen uit de lijst met toegestane instellingen en "
-    "binnen de grenzen. Die moet eerst een backtest doorstaan en wordt dan vier weken eerlijk getest naast de huidige "
+    "binnen de grenzen. Die moet eerst een backtest doorstaan en wordt dan acht weken eerlijk getest naast de huidige "
     "versie. Stel alleen iets voor als je er een concrete reden voor ziet in de "
     "cijfers. Geen voorstel is vaak het beste antwoord, zeker in de eerste weken: "
     "een aanpassing op basis van toeval maakt het experiment slechter. Loopt er al "

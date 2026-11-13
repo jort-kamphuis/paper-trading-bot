@@ -95,11 +95,13 @@ class Budget:
                 f"volgende maand. De andere strategieën lopen gewoon door."
             )
 
-    def boek(self, rol: str, kosten: Kosten) -> None:
-        """Leg de kosten van een aanroep vast."""
+    def boek(self, rol: str, kosten: Kosten, model_antwoord: str | None = None,
+             verzoek_id: str | None = None) -> None:
+        """Leg de kosten van een aanroep vast, met het model dat de API terugmeldde."""
         self.con.execute(
-            """INSERT INTO ai_kosten (datum, maand, rol, model, tokens_in, tokens_uit, kosten_usd)
-               VALUES (?,?,?,?,?,?,?)""",
+            """INSERT INTO ai_kosten (datum, maand, rol, model, tokens_in, tokens_uit, kosten_usd,
+                                       model_antwoord, verzoek_id)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
             (
                 self.vandaag,
                 self.maand,
@@ -108,6 +110,8 @@ class Budget:
                 kosten.tokens_in,
                 kosten.tokens_uit,
                 kosten.usd,
+                model_antwoord,
+                verzoek_id,
             ),
         )
 

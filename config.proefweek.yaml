@@ -35,11 +35,13 @@ proefweek:
   herinnering:
     datum: "2026-11-18"
     tekst: >-
-      Herinnering: zet voor 20 november ongeveer 40 dollar aan credits bij in de
-      Anthropic-console, met automatisch opwaarderen uit en de limiet op 40 dollar.
-      Je gratis tegoed verloopt op 20 november om 00:00 UTC. De proefrondes van
-      20 en 21 november (zonder Opus) en daarna de echte meting (vanaf maandag
-      23 november) gebruiken die credits.
+      Herinnering: koop voor 20 november de credits voor de hele meting, in een
+      keer, in de Anthropic-console, met automatisch opwaarderen uit. Je gratis
+      tegoed verloopt op 20 november om 00:00 UTC. De proefrondes van 20 en 21
+      november (zonder Opus) gebruiken die credits ook al; reken daar een paar
+      dollar extra voor. Het bedrag voor de meting zelf staat hieronder.
+    # De marge bovenop het berekende bedrag, in procenten.
+    marge_pct: 20
 
   # Bij het omschakelen naar de echte meting wordt dit bedrag als correctie
   # geboekt (de proef op een kopie die op 13 november de API aanriep).

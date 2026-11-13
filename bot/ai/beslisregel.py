@@ -12,9 +12,11 @@ Verkopen
 Kopen
 * alleen bij een kans van 0,55 of meer EN een verwacht extra rendement van
   0,5% of meer (ruim boven de kosten van ongeveer 0,3% heen en terug);
-* eerst alle symbolen beoordelen, dan de beste kiezen: gerangschikt op het
-  verwachte extra rendement, dan op de kans. Zo wint niet het symbool dat toevallig
-  vooraan in de lijst staat;
+* eerst alle symbolen beoordelen, dan de beste kiezen: gerangschikt op de kans,
+  dan op het verwachte extra rendement. Zo wint niet het symbool dat toevallig
+  vooraan in de lijst staat. Op de kans en niet op de verwachting: bij SPY en BTC
+  (tegen kas) zit in de verwachting de hele marktstijging, bij de rest alleen het
+  verschil met SPY of BTC; de kans is bij beide vragen even groot te krijgen;
 * niet als het beoordelen die nacht niet compleet was (budget op of fouten): dan
   zou de keuze scheef zijn naar de symbolen die wel beoordeeld zijn.
 """
@@ -101,7 +103,7 @@ def kies(
         b for s, b in beoordelingen.items()
         if s not in bezet and s not in verkocht and voldoet_aan_koopregel(b, regels)
     ]
-    kandidaten.sort(key=lambda b: (b.verwacht_pct, b.kans), reverse=True)
+    kandidaten.sort(key=lambda b: (b.kans, b.verwacht_pct), reverse=True)
     for b in kandidaten[:vrij]:
         uit.orders.append(
             Order(

@@ -52,7 +52,8 @@ def test_proefweek_tot_en_met_23_november():
 def test_herinnering_over_de_credits():
     h = OVERLAY["proefweek"]["herinnering"]
     assert h["datum"] == "2026-11-18"
-    assert "40 dollar" in h["tekst"] and "automatisch opwaarderen uit" in h["tekst"]
+    assert "in een keer" in h["tekst"] and "automatisch opwaarderen uit" in h["tekst"]
+    assert h["marge_pct"] == 20
 
 
 def test_proefweek_instellingen():
@@ -157,12 +158,13 @@ def test_in_de_proefweek_wordt_ook_bij_een_slechtere_b_om_akkoord_gevraagd(con):
     assert "Geen betekenisvol verschil" in rij["uitslag"] and "proefweek" in rij["uitslag"]
 
 
-def test_in_de_echte_meting_stopt_een_slechtere_b_gewoon(con):
+def test_in_de_echte_meting_wacht_een_proef_met_te_weinig_dagen(con):
+    """Zonder genoeg beursdagen voor een eerlijke toets loopt de proef door (geen oordeel)."""
     cfg = _echt()
     cfg["challenger"]["weken"] = 0
     c = _proef_challenger(con, cfg, a_groei=2.0, b_groei=1.0)
-    challenger.beoordeel(con, cfg, "2026-11-17", ["2026-11-16", "2026-11-17"])
-    assert con.execute("SELECT status FROM challengers WHERE id=?", (c["id"],)).fetchone()["status"] == "afgewezen"
+    assert challenger.beoordeel(con, cfg, "2026-11-17", ["2026-11-16", "2026-11-17"]) == []
+    assert con.execute("SELECT status FROM challengers WHERE id=?", (c["id"],)).fetchone()["status"] == "loopt"
 
 
 def test_akkoord_in_de_proefweek_is_als_test_gemarkeerd(con, config_kopie):
@@ -222,7 +224,7 @@ def test_omschakelen_start_de_echte_meting_en_boekt_de_correctie(tmp_path):
     assert "echte meting begint nu" in melding
     assert echt.execute("SELECT COUNT(*) n FROM trades").fetchone()["n"] == 0
     assert echt.execute("SELECT COUNT(*) n FROM portefeuilles").fetchone()["n"] == 0
-    assert database.lees_instelling(echt, "start_datum") is None, "de nieuwe meting kiest zelf haar startdag"
+    assert database.lees_instelling(echt, "start_datum") == "2026-11-23", "de startdag ligt vooraf vast"
     correctie = echt.execute("SELECT * FROM ai_kosten WHERE rol='correctie'").fetchone()
     assert correctie["kosten_usd"] == pytest.approx(0.2339)
     assert correctie["maand"] == "2026-11"

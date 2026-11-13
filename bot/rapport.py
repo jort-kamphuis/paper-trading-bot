@@ -15,6 +15,8 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
+import numpy as np
+
 from bot import statistiek
 
 # Waar elke strategie tegen wordt afgezet. gelijk_alle (gelijk verdeeld over
@@ -143,6 +145,46 @@ def vergelijk(
     return Vergelijking(tegen=b, verschil_pp=verschil, p_waarde=p)
 
 
+EVEN_BELEGD = " (even belegd)"
+
+
+def even_belegd_reeksen(
+    con: sqlite3.Connection, pf: str, meetlat: str, tot: str, kal: list[str]
+) -> tuple[list[str], list[float], list[float]] | None:
+    """Dagrendementen van pf en van 'meetlat, even belegd als pf'.
+
+    De meetlat even belegd: elke dag hetzelfde deel in de meetlat als pf de dag
+    ervoor belegd had, de rest in kas (rendement 0). Zo meet het verschil hoe goed
+    pf kiest, en niet hoeveel geld hij in kas houdt (review november 2026).
+    """
+    eigen = {r["datum"]: r for r in _reeks(con, pf, tot)}
+    tegen = {r["datum"]: r["totaal_usd"] for r in _reeks(con, meetlat, tot)}
+    dagen = [d for d in kal if d in eigen and d in tegen]
+    if len(dagen) < 2:
+        return None
+    r_pf, r_eb = [], []
+    for vorige, d in zip(dagen, dagen[1:]):
+        w_vorig = eigen[vorige]["totaal_usd"]
+        if not w_vorig or not tegen[vorige]:
+            continue
+        belegd = max(0.0, min(1.0, eigen[vorige]["posities_usd"] / w_vorig))
+        r_pf.append(eigen[d]["totaal_usd"] / w_vorig - 1.0)
+        r_eb.append(belegd * (tegen[d] / tegen[vorige] - 1.0))
+    return dagen, r_pf, r_eb
+
+
+def vergelijk_even_belegd(
+    con: sqlite3.Connection, pf: str, meetlat: str, tot: str, kal: list[str]
+) -> Vergelijking | None:
+    reeksen = even_belegd_reeksen(con, pf, meetlat, tot, kal)
+    if reeksen is None or not reeksen[1]:
+        return None
+    _, r_pf, r_eb = reeksen
+    groei = lambda r: 100.0 * (float(np.prod([1.0 + x for x in r])) - 1.0)  # noqa: E731
+    p = statistiek.vergelijk_reeksen(r_pf, r_eb)
+    return Vergelijking(tegen=meetlat + EVEN_BELEGD, verschil_pp=groei(r_pf) - groei(r_eb), p_waarde=p)
+
+
 def alle_kerncijfers(con: sqlite3.Connection, cfg: dict, tot: str) -> list[Kerncijfers]:
     kal = kalender(con, cfg)
     namen = [
@@ -162,6 +204,13 @@ def alle_kerncijfers(con: sqlite3.Connection, cfg: dict, tot: str) -> list[Kernc
                     v = vergelijk(con, naam, meetlat, tot, kal)
                     if v:
                         k.vergelijkingen.append(v)
+            # Ook tegen de gelijk verdeelde meetlat, even belegd als deze portefeuille:
+            # dat meet het kiezen, los van hoeveel geld er in kas staat.
+            for meetlat in ("gelijk_alle", "gelijk_ai"):
+                if meetlat in namen:
+                    v = vergelijk_even_belegd(con, naam, meetlat, tot, kal)
+                    if v:
+                        k.vergelijkingen.append(v)
         uit.append(k)
     return uit
 
@@ -179,8 +228,10 @@ def _pct(x: float | None, teken: bool = True) -> str:
 def _p(p: float | None) -> str:
     if p is None:
         return "te weinig dagen om te toetsen"
-    oordeel = "betekenisvol" if p <= 0.05 else "kan nog geluk zijn"
-    return f"p {getal(p, 2)}, {oordeel}"
+    # Tussenstanden zijn altijd verkennend: wie elke week kijkt en bij het eerste
+    # lage getal conclusies trekt, maakt de toets waardeloos. Alleen de hoofdvraag op
+    # de einddatum telt (README).
+    return f"p {getal(p, 2)}, verkennend"
 
 
 def blok(k: Kerncijfers) -> list[str]:
@@ -201,7 +252,9 @@ def blok(k: Kerncijfers) -> list[str]:
         r.append(f"  gemiddeld belegd: {_pct(k.belegd_pct, teken=False)} van het geld")
     for v in k.vergelijkingen:
         naam = {"benchmark_spy": "SPY", "benchmark_btc": "BTC", "gelijk_alle": "gelijk verdeeld (alle)",
-                "gelijk_ai": "gelijk verdeeld (AI-lijst)"}.get(v.tegen, v.tegen)
+                "gelijk_ai": "gelijk verdeeld (AI-lijst)",
+                "gelijk_alle" + EVEN_BELEGD: "gelijk verdeeld (alle), even belegd",
+                "gelijk_ai" + EVEN_BELEGD: "gelijk verdeeld (AI-lijst), even belegd"}.get(v.tegen, v.tegen)
         r.append(f"  tegen {naam}: {getal(v.verschil_pp, 1, teken=True)} procentpunt ({_p(v.p_waarde)})")
     if k.oordeel:
         r.append(f"  {k.oordeel.uitleg}")

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#131722">
+<title>Paper trading dashboard</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="kop">
+  <div class="kop-rij">
+    <span class="nepgeld">Nep-geld · paper trading</span>
+    <span id="stand" class="dim"></span>
+    <div class="weergave" id="weergave" role="group" aria-label="Weergave">
+      <button type="button" data-weergave="echt">Echte meting</button>
+      <button type="button" data-weergave="proef" class="proef-knop">Proefweek, telt niet mee</button>
+    </div>
+  </div>
+  <div id="label" class="label-balk" hidden></div>
+  <div id="proefbalk" class="proef-balk" hidden>Proefweek: dit telt niet mee voor de meting.</div>
+  <nav class="tabs" id="tabs" aria-label="Onderdelen">
+    <button type="button" data-tab="overzicht"><span class="ico" aria-hidden="true">◧</span><span>Overzicht</span></button>
+    <button type="button" data-tab="kansen"><span class="ico" aria-hidden="true">◎</span><span>Kansen</span></button>
+    <button type="button" data-tab="symbolen"><span class="ico" aria-hidden="true">▥</span><span>Symbolen</span></button>
+    <button type="button" data-tab="vergaderzaal"><span class="ico" aria-hidden="true">☰</span><span>Vergaderzaal</span></button>
+    <button type="button" data-tab="weekrapport"><span class="ico" aria-hidden="true">▤</span><span>Weekrapport</span></button>
+    <button type="button" data-tab="kosten"><span class="ico" aria-hidden="true">$</span><span>Kosten</span></button>
+  </nav>
+</header>
+
+<main id="inhoud">
+  <section data-paneel="overzicht"></section>
+  <section data-paneel="kansen" hidden></section>
+  <section data-paneel="symbolen" hidden></section>
+  <section data-paneel="vergaderzaal" hidden></section>
+  <section data-paneel="weekrapport" hidden></section>
+  <section data-paneel="kosten" hidden></section>
+</main>
+
+<footer class="voet">
+  <p>Nep-geld, geen beleggingsadvies. Er wordt nergens met echt geld gehandeld.</p>
+  <p>Grafieken: TradingView Lightweight Charts™, Copyright (c) 2025 TradingView, Inc.,
+    <a href="https://www.tradingview.com/" rel="noopener" target="_blank">tradingview.com</a>
+    (Apache License 2.0).</p>
+  <p id="gemaakt" class="dim"></p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.2.1/dist/lightweight-charts.standalone.production.js"
+        integrity="sha256-4hzFyqAibvML2FScULnvkmYV8qTua05IY1NHelX1mM8=" crossorigin="anonymous"></script>
+<script src="app.js"></script>
+</body>
+</html>

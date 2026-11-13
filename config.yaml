@@ -241,3 +241,17 @@ backtest:
   # Alleen voor de regelstrategieën. Dit is GEEN bewijs: zie README.
   jaren_terug: 1
   opwarm_dagen: 300   # extra geschiedenis vooraf, nodig voor het 200-daags gemiddelde
+
+# De meting, zoals vooraf vastgelegd in de README (de hoofdvraag). Alleen voor
+# het dashboard en de rapporten; dit verandert niets aan wat een portefeuille doet.
+meting:
+  start: "2026-11-23"
+  einde: "2027-02-23"
+  ai_portefeuille: ai_analist        # de portefeuille van de hoofdvraag
+  proef_ai_portefeuille: proef_ai_mix  # zijn tegenhanger in de proefweek
+
+dashboard:
+  # Gepubliceerd via GitHub Pages; de link staat onder elk Telegram-bericht.
+  url: https://jort-kamphuis.github.io/paper-trading-bot/
+  # Hoeveel kalenderdagen koersgeschiedenis de grafiek per symbool toont.
+  symbool_dagen: 365

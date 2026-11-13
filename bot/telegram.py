@@ -75,6 +75,21 @@ def _roep_aan(token: str, methode: str, gegevens: dict | None = None, timeout: i
     return inhoud
 
 
+def dashboard_url() -> str | None:
+    try:
+        return (conf.laad().get("dashboard") or {}).get("url") or None
+    except Exception:  # pragma: no cover  (een bericht mag nooit mislukken om de link)
+        return None
+
+
+def met_dashboardlink(tekst: str) -> str:
+    """Zet de link naar het dashboard onder elk bericht."""
+    url = dashboard_url()
+    if not url or url in tekst:
+        return tekst
+    return f"{tekst.rstrip()}\n\nDashboard: {url}"
+
+
 def stuur(tekst: str, stil: bool = False) -> int:
     """Stuur een bericht naar je eigen chat. Geeft het aantal verstuurde delen terug.
 
@@ -85,7 +100,7 @@ def stuur(tekst: str, stil: bool = False) -> int:
     chat = conf.sleutel("TELEGRAM_CHAT_ID")
     if not token or not chat:
         raise TelegramFout("TELEGRAM_BOT_TOKEN of TELEGRAM_CHAT_ID ontbreekt")
-    delen = deel_op(tekst)
+    delen = deel_op(met_dashboardlink(tekst))
     for i, deel in enumerate(delen, 1):
         kop = f"({i}/{len(delen)})\n" if len(delen) > 1 else ""
         _roep_aan(

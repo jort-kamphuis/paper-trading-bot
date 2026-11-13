@@ -70,7 +70,7 @@ het betekent dat er geen voordeel te zien was dat groot genoeg is om te tellen.
 | Dagelijks bericht via Telegram | klaar |
 | Weekrapport met conclusies van Claude | klaar |
 | Challenger: een verbetering eerst toetsen, dan eerlijk testen, pas na jouw akkoord | klaar |
-| Dashboard | stap 6 |
+| Dashboard (GitHub Pages), link onder elk Telegram-bericht | klaar |
 
 ---
 
@@ -158,6 +158,48 @@ git pull
 `dagelijks.py` weigert dan lokaal te draaien. Anders zou je lokale kopie een
 andere meting worden en botst het bij de volgende `git pull`. De backtest heeft
 een eigen database (`data/backtest.db`) en kan dus gewoon lokaal.
+
+---
+
+## Het dashboard
+
+Elke nacht, na de ronde, bouwt de bot een dashboard en zet het op GitHub Pages:
+
+**https://jort-kamphuis.github.io/paper-trading-bot/**
+
+De link staat ook onder elk Telegram-bericht. Het werkt op de laptop en op de
+telefoon, en het verandert niets aan de portefeuilles: het laat alleen zien wat
+er in de databases staat.
+
+* **Overzicht:** de hoofdvraag met de tussenstand en het aantal dagen tot de
+  einddatum, wat de AI vandaag deed, de waarde van alle portefeuilles in één
+  grafiek (de meetlatten gestippeld, elke lijn aan en uit te zetten) en een
+  scorekaart per portefeuille.
+* **Kansen:** per AI-portefeuille en apart per soort vraag de Brier-score
+  (tegenover 0,25) en de kalibratie in vakken van 0,05.
+* **Symbolen:** de dagkoersen als kaarsen, met de lijnen die de bot echt
+  gebruikt (MA50, MA200, MA5, RSI(2)), de AI-kans per dag, en waar elke
+  portefeuille kocht of verkocht, met de reden. Bij elke lijn staat uitleg.
+* **Vergaderzaal:** per AI-beslissing wat elke rol zei, met de nieuwskoppen.
+* **Weekrapport**, **Kosten**, en bovenaan de keuze tussen de echte meting en de
+  proefweek (die telt niet mee).
+
+Het label bij de hoofdvraag blijft tot de einddatum "nog niet te zeggen", ook
+als de p-waarde onderweg laag is: wie elke dag kijkt en bij het eerste mooie
+getal stopt, maakt de toets waardeloos.
+
+Wat erin staat: alleen resultaten (koersen, standen, trades, beoordelingen,
+rapporten, kosten). Nooit sleutels, en niets uit de tabel `instellingen`. Een
+test controleert dat. De repository is openbaar, dus het dashboard ook.
+
+Grafieken: [TradingView Lightweight Charts™](https://www.tradingview.com/),
+Copyright (c) 2025 TradingView, Inc., onder de Apache License 2.0.
+
+Zelf bouwen (lokaal, op een kopie):
+
+```bash
+.venv\Scripts\python.exe scripts\exporteer_dashboard.py --uit _site
+```
 
 ---
 
@@ -623,6 +665,7 @@ paper-trading-bot/
 │   ├── weekrapport.py       het hele weekrapport
 │   ├── challenger.py        een verbetering eerlijk testen, en je akkoord
 │   ├── challenger_toets.py  de backtest die een voorstel eerst moet halen
+│   ├── dashboard.py       de export voor het dashboard (alleen resultaten)
 │   ├── data/                koersen, wisselkoers, nieuws en kwartaalcijfers
 │   ├── strategieen/         de strategieën en de meetlatten
 │   └── ai/                  de AI-analist
@@ -636,12 +679,14 @@ paper-trading-bot/
 │       ├── kostenprognose.py  past het in een maand?
 │       ├── kalibratie.py    klopten de kansen? (Brier-score per soort vraag)
 │       └── weekoordeel.py   de drie conclusies en het voorstel
+├── site/                    het dashboard: index.html, app.js, style.css
 ├── scripts/
 │   ├── vernieuw_data.py     koersen ophalen
 │   ├── dagelijks.py         de dagelijkse ronde
 │   ├── stand.py             laat zien hoe het ervoor staat
 │   ├── ai_kosten.py         wat de AI echt kost
 │   ├── proefweek_verslag.py wat de AI in de proefweek deed
+│   ├── exporteer_dashboard.py  het dashboard bouwen (door GitHub, elke nacht)
 │   ├── omschakelen.py       nu omschakelen naar de echte meting (via GitHub)
 │   ├── backtest.py          de backtest
 │   ├── herstart_meting.py   opnieuw beginnen (wist alles)
@@ -649,7 +694,7 @@ paper-trading-bot/
 │   ├── zet_github_secrets.py  sleutels uit .env naar GitHub Secrets
 │   ├── slank_maken.py       database klein maken voor git (door GitHub)
 │   └── meld_fout.py         foutmelding naar Telegram (door GitHub)
-└── tests/                   254 tests
+└── tests/                   268 tests
 ```
 
 ### Wanneer begint de meting

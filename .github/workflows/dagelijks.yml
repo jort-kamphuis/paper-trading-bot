@@ -32,6 +32,9 @@ on:
 
 permissions:
   contents: write
+  # Alleen voor het publiceren van het dashboard op GitHub Pages.
+  pages: write
+  id-token: write
 
 # Nooit twee rondes tegelijk.
 concurrency:
@@ -78,6 +81,22 @@ jobs:
           OMSCHAKELEN: ${{ inputs.omschakelen || 'auto' }}
         run: python scripts/dagelijks.py --telegram --weekrapport "$WEEKRAPPORT" --omschakelen "$OMSCHAKELEN"
 
+      # Het dashboard: nu bouwen, want na het bewaren is de database klein gemaakt
+      # en zijn de koersen voor de grafieken weg. Gaat dit mis, dan wordt de
+      # database gewoon bewaard; het dashboard blijft dan een nacht oud.
+      - name: Dashboard bouwen
+        id: dashboard
+        if: ${{ always() && (steps.ronde.outcome == 'success' || steps.ronde.outcome == 'failure') }}
+        continue-on-error: true
+        run: python scripts/exporteer_dashboard.py --uit _site
+
+      - name: Dashboard klaarzetten voor GitHub Pages
+        if: ${{ always() && steps.dashboard.outcome == 'success' }}
+        continue-on-error: true
+        uses: actions/upload-pages-artifact@v5.0.1
+        with:
+          path: _site
+
       # Ook na een mislukte ronde: de AI-kosten en -beslissingen zijn per symbool
       # vastgelegd. Gooi je die weg, dan betaalt de bot morgen opnieuw voor
       # hetzelfde. Elke dag gaat in een keer of niet, dus de database is nooit
@@ -113,3 +132,20 @@ jobs:
           python scripts/meld_fout.py
           "Een stap buiten de ronde zelf is mislukt (installeren, tests of bewaren)."
           "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+  # Het dashboard publiceren op GitHub Pages (alleen lezen, nep-geld). Een eigen
+  # job, omdat GitHub Pages dat zo vraagt. Mislukt dit, dan blijft de vorige
+  # versie van het dashboard staan; de ronde zelf is dan al klaar en bewaard.
+  dashboard:
+    needs: ronde
+    if: ${{ always() && needs.ronde.result != 'cancelled' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    environment:
+      name: github-pages
+      url: ${{ steps.publiceren.outputs.page_url }}
+    steps:
+      - name: Publiceren
+        id: publiceren
+        uses: actions/deploy-pages@v6.0.0

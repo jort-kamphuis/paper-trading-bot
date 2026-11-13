@@ -22,3 +22,6 @@ data/*.db-journal
 
 # Tijdelijk bestand van de nachtronde, voor het commitbericht na een akkoord.
 .wijziging.txt
+
+# Het dashboard wordt elke nacht opnieuw gebouwd en via GitHub Pages gepubliceerd.
+_site/

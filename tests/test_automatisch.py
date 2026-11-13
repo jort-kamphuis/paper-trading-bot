@@ -298,9 +298,12 @@ def test_workflow_bevat_de_veiligheidsstappen():
         if regel.strip().startswith("run:"):
             assert "${{ inputs." not in regel, f"invoer direct in een opdracht: {regel.strip()}"
     assert "config.yaml" in tekst, "na een akkoord moet config.yaml mee in de commit"
-    # Nergens een sleutel in de tekst zelf.
+    # Nergens een sleutel in de tekst zelf. 'id-token: write' is geen sleutel maar de
+    # toestemming die GitHub Pages nodig heeft om het dashboard te publiceren.
+    assert tekst.count("id-token: write") <= 1
+    zonder = tekst.replace("id-token: write", "")
     for verboden in ("sk-ant-", "api_key:", "token:"):
-        assert verboden not in tekst
+        assert verboden not in zonder
 
 
 def test_databases_in_gitignore_kloppen():

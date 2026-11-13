@@ -166,10 +166,7 @@ def alle_kerncijfers(con: sqlite3.Connection, cfg: dict, tot: str) -> list[Kernc
 # ------------------------------------------------------------------- tekst
 
 
-def getal(x: float, decimalen: int = 1, teken: bool = False) -> str:
-    """Een getal op zijn Nederlands: komma voor decimalen, punt voor duizendtallen."""
-    tekst = f"{x:+,.{decimalen}f}" if teken else f"{x:,.{decimalen}f}"
-    return tekst.replace(",", "~").replace(".", ",").replace("~", ".")
+from bot.tekst import getal  # noqa: E402  (ook gebruikt door de tests)
 
 
 def _pct(x: float | None, teken: bool = True) -> str:

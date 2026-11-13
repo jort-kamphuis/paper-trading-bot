@@ -116,12 +116,60 @@ def test_dagbericht_voor_telegram(con):
     pf.bewaar_waarde(con, "2026-11-13", {"AAPL": 182.0})
     con.commit()
 
-    tekst = overzicht.telegram_dagbericht(con, "2026-11-13", extra=["AI-kosten vandaag $0.10"])
+    tekst = overzicht.telegram_dagbericht(con, "2026-11-13", extra=["AI-kosten vandaag $0,10"])
     assert "momentum" in tekst
     assert "koop AAPL" in tekst
     assert "plek 1 van 48" in tekst
     assert "AI-kosten vandaag" in tekst
     assert "Nep-geld" in tekst, "elk bericht zegt dat het om nep-geld gaat"
+
+
+def test_dagbericht_noemt_de_beursdag_voluit(con):
+    """Het bericht komt een dag later binnen; dan moet duidelijk zijn over welke dag het gaat."""
+    nieuwe_portefeuille("momentum", "momentum", INSTELLINGEN, gestart_op="2026-11-12").bewaar(con)
+    con.commit()
+    tekst = overzicht.telegram_dagbericht(con, "2026-11-12")
+    assert tekst.startswith("Paper trading: stand na de beursdag van donderdag 12 november 2026")
+
+
+def test_dagbericht_alles_in_nederlandse_notatie(con):
+    pf = nieuwe_portefeuille("momentum", "momentum", INSTELLINGEN, gestart_op="2026-11-12")
+    pf.koop("AAPL", "2026-11-13", "2026-11-12", 200.0, "USD", 1.10, zekerheid=0.75)
+    pf.bewaar(con)
+    pf.bewaar_waarde(con, "2026-11-13", {"AAPL": 182.0})
+    con.commit()
+    tekst = overzicht.telegram_dagbericht(con, "2026-11-13")
+    import re
+
+    assert not re.search(r"\d\.\d+%", tekst), "procenten met een punt"
+    assert "zekerheid 0,75" in tekst
+    assert "€" in tekst and re.search(r"€\d{1,3}(\.\d{3})*,\d{2}", tekst)
+
+
+def test_dagbericht_zegt_wat_de_ai_deed(con):
+    nieuwe_portefeuille("proef_ai_opus", "x", INSTELLINGEN, gestart_op="2026-11-12").bewaar(con)
+    for s, actie in (("AAA", "NIETS"), ("BBB", "NIETS"), ("CCC", "KOOP")):
+        con.execute(
+            """INSERT INTO ai_besluiten (portefeuille, symbool, datum, actie, nieuws_tot, gemaakt_op)
+               VALUES ('proef_ai_opus', ?, '2026-11-12', ?, 'x', 'x')""",
+            (s, actie),
+        )
+    con.execute(
+        """INSERT INTO ai_besluiten (portefeuille, symbool, datum, actie, overgeslagen, nieuws_tot, gemaakt_op)
+           VALUES ('proef_ai_opus', 'DDD', '2026-11-12', 'NIETS', 'geen koers op deze dag', 'x', 'x')"""
+    )
+    con.commit()
+    tekst = overzicht.telegram_dagbericht(con, "2026-11-12")
+    assert "AI: 3 beoordelingen, 1 keer kopen, 0 keer verkopen." in tekst
+
+
+def test_nederlandse_notatie():
+    from bot import tekst
+
+    assert tekst.getal(1234.5, 2) == "1.234,50"
+    assert tekst.dollar(2.771) == "$2,77"
+    assert tekst.pct(-0.5) == "-0,5%"
+    assert tekst.datum_lang("2026-11-20") == "vrijdag 20 november 2026"
 
 
 # ------------------------------------------------------------ slanke database

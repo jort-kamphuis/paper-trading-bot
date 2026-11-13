@@ -20,6 +20,7 @@ from datetime import date, datetime, timezone
 from bot import challenger, rapport
 from bot.ai.budget import Budget, BudgetOp
 from bot.challenger import Voorstel
+from bot.tekst import dollar
 from bot.opzet import SLEUTEL_START
 
 
@@ -202,7 +203,7 @@ def maak(
 
     # ---- 4. kosten ----
     budget = Budget(con, cfg)
-    kosten = f"AI-kosten deze maand: ${budget.uitgegeven():.2f} van ${budget.max_usd:.2f}."
+    kosten = f"AI-kosten deze maand: {dollar(budget.uitgegeven(), 2)} van {dollar(budget.max_usd, 2)}."
 
     tekst = "\n\n".join(
         [cijfers_tekst, proef_tekst, "\n".join(ai_regels), kosten, "Nep-geld, geen beleggingsadvies."]

@@ -76,6 +76,24 @@ def open_posities(con: sqlite3.Connection, portefeuille: str | None = None) -> l
     return con.execute("SELECT * FROM posities ORDER BY portefeuille, symbool").fetchall()
 
 
+def ai_samenvatting(con: sqlite3.Connection, datum: str) -> str | None:
+    """Een regel over wat de AI-analist over deze dag besloot. None als hij niets deed."""
+    rijen = con.execute(
+        """SELECT actie, COUNT(*) n FROM ai_besluiten
+           WHERE datum = ? AND COALESCE(overgeslagen, '') != 'geen koers op deze dag'
+           GROUP BY actie""",
+        (datum,),
+    ).fetchall()
+    if not rijen:
+        return None
+    telling = {r["actie"]: r["n"] for r in rijen}
+    totaal = sum(telling.values())
+    kopen, verkopen = telling.get("KOOP", 0), telling.get("VERKOOP", 0)
+    if not kopen and not verkopen:
+        return f"AI: {totaal} beoordelingen, 0 keer kopen of verkopen."
+    return f"AI: {totaal} beoordelingen, {kopen} keer kopen, {verkopen} keer verkopen."
+
+
 def _kort(tekst: str | None, max_lengte: int = 160) -> str:
     tekst = " ".join((tekst or "").split())
     return tekst if len(tekst) <= max_lengte else tekst[: max_lengte - 1].rstrip() + "…"
@@ -89,14 +107,15 @@ def telegram_dagbericht(
     Kort genoeg om op een telefoon in een oogopslag te lezen: de stand per
     portefeuille, de trades van die dag met hun reden, en wat er klaarstaat.
     """
-    regels = [f"Paper trading, {datum}", ""]
+    from bot.tekst import datum_lang, euro, getal, pct
+
+    regels = [f"Paper trading: stand na de beursdag van {datum_lang(datum)}", ""]
 
     standen = portefeuille_standen(con, datum)
     if not standen:
         regels.append("Nog geen standen vastgelegd.")
     for s in standen:
-        teken = "+" if s["rendement_pct"] >= 0 else ""
-        regels.append(f"{s['portefeuille']}: €{_euro(s['totaal_eur'])} ({teken}{s['rendement_pct']:.1f}%)")
+        regels.append(f"{s['portefeuille']}: {euro(s['totaal_eur'])} ({pct(s['rendement_pct'])})")
 
     trades = trades_op(con, datum)
     regels.append("")
@@ -105,14 +124,18 @@ def telegram_dagbericht(
         for t in trades:
             resultaat = ""
             if t["actie"] == "VERKOOP" and t["resultaat_eur"] is not None:
-                teken = "+" if t["resultaat_eur"] >= 0 else ""
-                resultaat = f", {teken}€{t['resultaat_eur']:.2f}"
-            zeker = f", zekerheid {t['zekerheid']:.2f}" if t["zekerheid"] is not None else ""
+                resultaat = f", {getal(t['resultaat_eur'], 2, teken=True)} euro"
+            zeker = f", zekerheid {getal(t['zekerheid'], 2)}" if t["zekerheid"] is not None else ""
             regels.append(f"• {t['portefeuille']}: {t['actie'].lower()} {t['symbool']}{resultaat}{zeker}")
             if t["reden"]:
                 regels.append(f"  {_kort(t['reden'])}")
     else:
         regels.append("Geen trades.")
+
+    ai = ai_samenvatting(con, datum)
+    if ai:
+        regels.append("")
+        regels.append(ai)
 
     wachtend = openstaande_orders(con)
     if wachtend:

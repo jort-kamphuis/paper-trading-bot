@@ -38,6 +38,7 @@ from bot import database, overzicht
 from bot.data.wisselkoers import Wisselkoers
 from bot.markt import Markt
 from bot.opzet import SLEUTEL_START, bouw_motor
+from bot.tekst import dollar
 
 # Onder deze sleutel onthoudt de database dat de meting op GitHub draait.
 SLEUTEL_GITHUB = "draait_op_github"
@@ -142,7 +143,7 @@ def _ai_ronde(
     if budget.is_op():
         print(budget.samenvatting())
         print("Het budget van deze maand is op. De AI-analist slaat vandaag over.")
-        return [f"AI-analist overgeslagen: budget van ${budget.max_usd:.2f} is op."]
+        return [f"AI-analist overgeslagen: budget van {dollar(budget.max_usd, 2)} is op."]
 
     symbolen = ai_symbolen(cfg, markt)
     if nieuw_nieuws:
@@ -157,7 +158,7 @@ def _ai_ronde(
         kosten_vandaag += uitkomst.kosten_usd
         if uitkomst.al_gedaan:
             print(f"    {uitkomst.al_gedaan} symbolen waren vandaag al beoordeeld; niet opnieuw betaald.")
-        print(f"    {len(uitkomst.orders)} orders klaargezet, kosten ${uitkomst.kosten_usd:.4f}")
+        print(f"    {len(uitkomst.orders)} orders klaargezet, kosten {dollar(uitkomst.kosten_usd, 4)}")
         if uitkomst.fouten:
             bericht.append(f"{naam}: {len(uitkomst.fouten)} fout(en), bijv. {uitkomst.fouten[0][:120]}")
         if uitkomst.gestopt:
@@ -171,8 +172,8 @@ def _ai_ronde(
         # In de proefweek is de vraag niet of 48 symbolen op Opus in een maand
         # passen, maar wat de echte meting straks kost. Dat meet proef_ai_mix.
         bericht.append(
-            f"AI-kosten vandaag ${kosten_vandaag:.3f}, proefweek tot nu toe "
-            f"${budget.uitgegeven():.2f} van ${budget.max_usd:.2f}."
+            f"AI-kosten vandaag {dollar(kosten_vandaag, 2)}, proefweek tot nu toe "
+            f"{dollar(budget.uitgegeven(), 2)} van {dollar(budget.max_usd, 2)}."
         )
         schatting = _schatting_echte_meting(con)
         if schatting:
@@ -183,10 +184,10 @@ def _ai_ronde(
     prognose = maak_prognose(con, cfg)
     print()
     print(als_tekst(prognose))
-    regel = f"AI-kosten vandaag ${kosten_vandaag:.3f}, deze maand ${budget.uitgegeven():.2f} van ${budget.max_usd:.2f}."
+    regel = f"AI-kosten vandaag {dollar(kosten_vandaag, 2)}, deze maand {dollar(budget.uitgegeven(), 2)} van {dollar(budget.max_usd, 2)}."
     if prognose.maand_usd is not None:
         oordeel = "past" if prognose.past else "PAST NIET"
-        regel += f" Verwachting: ${prognose.maand_usd:.2f}/maand ({oordeel}, {prognose.rondes} ronde(s) gemeten)."
+        regel += f" Verwachting: {dollar(prognose.maand_usd, 2)}/maand ({oordeel}, {prognose.rondes} ronde(s) gemeten)."
     bericht.append(regel)
     return bericht
 
@@ -216,8 +217,8 @@ def _schatting_echte_meting(con) -> str | None:
     budget = float(normaal["ai"]["budget"]["max_usd_per_maand"])
     oordeel = "past" if totaal <= budget else "PAST NIET"
     return (
-        f"Echte meting (mix + Haiku-controle, 15 symbolen) naar schatting ${totaal:.2f} per maand "
-        f"tegen een budget van ${budget:.2f}: {oordeel}. Gemeten over {p.rondes} ronde(s)."
+        f"Echte meting (mix + Haiku-controle, 15 symbolen) naar schatting {dollar(totaal, 2)} per maand "
+        f"tegen een budget van {dollar(budget, 2)}: {oordeel}. Gemeten over {p.rondes} ronde(s)."
     )
 
 

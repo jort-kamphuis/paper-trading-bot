@@ -202,7 +202,7 @@ def beoordeel(
 ) -> Zekerheid:
     """Zeg in gewone taal of het resultaat al iets betekent.
 
-    'resultaten_per_trade' is het resultaat in euro's per afgeronde trade.
+    'resultaten_per_trade' is het resultaat in dollars per afgeronde trade.
     """
     aantal = len(resultaten_per_trade)
     gemiddelde = float(np.mean(resultaten_per_trade)) if aantal else 0.0
@@ -252,16 +252,41 @@ def beoordeel(
     return Zekerheid(aantal, gemiddelde, p, False, nodig, "".join(delen))
 
 
+def blok_bootstrap_p_waarde(
+    waarnemingen: list[float], blok: int = 10, trekkingen: int = 10_000, zaad: int = 12345
+) -> float | None:
+    """Zoals bootstrap_p_waarde, maar met blokken van opeenvolgende dagen.
+
+    Rendementen van opeenvolgende dagen hangen samen (een goede week bestaat uit
+    goede dagen achter elkaar). Trek je losse dagen, dan lijkt een verschil
+    zekerder dan het is. Daarom trekken we blokken van 'blok' dagen achter
+    elkaar (een 'moving block bootstrap'). De p-waarde is het deel van de
+    trekkingen waarin het gemiddelde niet positief is.
+    """
+    arr = np.asarray(waarnemingen, dtype=float)
+    n = arr.size
+    if n < max(20, 2 * blok):
+        return None
+    generator = np.random.default_rng(zaad)
+    aantal_blokken = int(np.ceil(n / blok))
+    starts = generator.integers(0, n - blok + 1, size=(trekkingen, aantal_blokken))
+    plekken = (starts[:, :, None] + np.arange(blok)[None, None, :]).reshape(trekkingen, -1)[:, :n]
+    gemiddelden = arr[plekken].mean(axis=1)
+    return max(float(np.mean(gemiddelden <= 0.0)), 1.0 / trekkingen)
+
+
 def vergelijk_reeksen(
     rendementen_strategie: list[float],
     rendementen_benchmark: list[float],
     trekkingen: int = 10_000,
     zaad: int = 12345,
+    blok: int = 10,
 ) -> float | None:
     """De kans dat het verschil met de meetlat toeval is.
 
-    We kijken per meetmoment naar het verschil in rendement en toetsen of dat
-    verschil gemiddeld boven nul ligt.
+    We kijken per meetmoment (beursdag) naar het verschil in rendement en toetsen
+    met een blok-bootstrap (blokken van 10 beursdagen) of dat verschil gemiddeld
+    boven nul ligt.
     """
     a = np.asarray(rendementen_strategie, dtype=float)
     b = np.asarray(rendementen_benchmark, dtype=float)
@@ -269,4 +294,4 @@ def vergelijk_reeksen(
     if n < 20:
         return None
     verschil = a[:n] - b[:n]
-    return bootstrap_p_waarde(list(verschil), trekkingen=trekkingen, zaad=zaad)
+    return blok_bootstrap_p_waarde(list(verschil), blok=blok, trekkingen=trekkingen, zaad=zaad)

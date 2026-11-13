@@ -1,20 +1,24 @@
-"""De vijf rollen: wat ze te zien krijgen en wat ze terug moeten geven.
+"""De rollen van de AI-analist: wat ze te zien krijgen en wat ze teruggeven.
 
-De opzet is geleend van TradingAgents: eerst twee analisten die feiten
-verzamelen, dan een bull en een bear die het oneens zijn, en tot slot een risk
-manager die knopen doorhakt.
+Opzet (naar het idee van TradingAgents, aangepast na de review):
+* De kengetallen rekent de code zelf uit (bot/ai/kenmerken.py).
+* De nieuwsanalist kijkt naar risico's en gebeurtenissen die eraan komen.
+* Bull en bear krijgen de tabel, de ruwe koppen en de nieuwssamenvatting.
+* De risk manager geeft een KANS en een VERWACHT EXTRA RENDEMENT. Hij beslist
+  niet; dat doet de code met vaste regels (config.yaml, ai.beslisregel).
+* ai_enkel doet alles in een aanroep: dezelfde gegevens, dezelfde uitkomst.
 
-Twee dingen staan vast in elke instructie:
-1. Het gaat om nep-geld. Er wordt nooit echt gehandeld.
-2. Als er te weinig te zeggen valt, moet de rol dat zeggen in plaats van iets
-   te verzinnen. "Ik weet het niet" is een geldig antwoord en leidt tot NIETS
-   DOEN, wat meestal de beste zet is.
-
-De schema's hieronder dwingen de vorm van het antwoord af. Daardoor hoeft de
-bot nooit te raden wat een rol bedoelde.
+De kans gaat altijd over hetzelfde: doet dit symbool de komende 14
+kalenderdagen beter dan zijn referentie (SPY voor aandelen en indexfondsen,
+BTC voor crypto), na ongeveer 0,3% kosten voor kopen en verkopen samen?
+Deze kans wordt voor elk symbool elke beursdag opgeslagen en later gescoord.
 """
 
 from __future__ import annotations
+
+from typing import Any
+
+from bot.ai.kenmerken import als_tekst
 
 ONDERAAN = (
     "Dit is een oefening met nep-geld. Er wordt nooit echt gehandeld en dit is "
@@ -33,148 +37,161 @@ def _schema(eigenschappen: dict, verplicht: list[str]) -> dict:
     }
 
 
-SCHEMA_ANALIST = _schema(
+SCHEMA_NIEUWS = _schema(
     {
         "samenvatting": {"type": "string", "description": "Hooguit drie zinnen."},
-        "signaal": {"type": "string", "enum": ["positief", "neutraal", "negatief"]},
-        "zekerheid": {
-            "type": "number",
-            "description": "0 tot 1. Hoe zeker ben je van dit signaal?",
+        "belangrijkste_risico": {"type": "string", "description": "Een zin, of 'geen'."},
+        "gebeurtenis_binnenkort": {
+            "type": "boolean",
+            "description": "Komt er in de komende 14 dagen iets dat de koers flink kan bewegen?",
         },
     },
-    ["samenvatting", "signaal", "zekerheid"],
+    ["samenvatting", "belangrijkste_risico", "gebeurtenis_binnenkort"],
 )
 
 SCHEMA_DEBAT = _schema(
     {
         "argument": {"type": "string", "description": "Hooguit vier zinnen."},
         "sterkste_punt": {"type": "string", "description": "Een zin."},
-        "overtuiging": {
-            "type": "number",
-            "description": "0 tot 1. Hoe sterk vind je je eigen zaak?",
-        },
+        "overtuiging": {"type": "number", "description": "0 tot 1. Hoe sterk vind je je eigen zaak?"},
     },
     ["argument", "sterkste_punt", "overtuiging"],
 )
 
-SCHEMA_RISK = _schema(
+SCHEMA_KANS = _schema(
     {
-        "actie": {"type": "string", "enum": ["KOOP", "VERKOOP", "NIETS"]},
+        "kans": {
+            "type": "number",
+            "description": (
+                "0 tot 1: de kans dat dit symbool over de komende 14 kalenderdagen, na 0,3% "
+                "kosten, beter doet dan de referentie. 0,5 betekent: geen idee."
+            ),
+        },
+        "verwacht_extra_rendement_pct": {
+            "type": "number",
+            "description": (
+                "Het verwachte rendement van dit symbool min dat van de referentie over 14 "
+                "kalenderdagen, in procentpunten, voor kosten. Kan negatief zijn."
+            ),
+        },
         "onderbouwing": {
             "type": "string",
             "description": "Hooguit drie zinnen, in gewone taal, zodat een leek het snapt.",
         },
-        "zekerheid": {
-            "type": "number",
-            "description": "0 tot 1. Onder 0,6 wordt er niet gehandeld.",
-        },
         "belangrijkste_risico": {"type": "string", "description": "Een zin."},
     },
-    ["actie", "onderbouwing", "zekerheid", "belangrijkste_risico"],
+    ["kans", "verwacht_extra_rendement_pct", "onderbouwing", "belangrijkste_risico"],
 )
 
 
 # ---------------------------------------------------------------- instructies
 
-SYSTEEM_TECHNISCH = (
-    "Je bent een technisch analist. Je krijgt kengetallen van een koers en zegt "
-    "wat die laten zien. Je voorspelt niets; je beschrijft wat er staat en hoe "
-    "sterk dat signaal is. Veel koersbewegingen zijn ruis, dus 'neutraal' is "
-    "vaak het eerlijke antwoord.\n\n" + ONDERAAN
-)
-
 SYSTEEM_NIEUWS = (
-    "Je bent een nieuwsanalist. Je krijgt nieuwskoppen over een bedrijf of fonds "
-    "en beoordeelt wat ze betekenen voor de koers op korte termijn. Veel "
-    "financieel nieuws is ruis: koersoverzichten, fondsen die iets kochten, "
-    "algemene beschouwingen. Dat soort koppen zijn 'neutraal'. Reageer alleen "
-    "op echt nieuws over het bedrijf zelf.\n\n" + ONDERAAN
+    "Je bent een nieuwsanalist. Je krijgt de recente nieuwskoppen over een bedrijf, "
+    "fonds of cryptomunt. Je zoekt vooral naar RISICO'S en GEBEURTENISSEN DIE ERAAN "
+    "KOMEN: kwartaalcijfers, rechtszaken, toezichthouders, productlanceringen, "
+    "overnames. Je probeert niet te voorspellen of de koers stijgt; nieuws dat al in "
+    "de koppen staat, zit meestal al in de koers. Veel financieel nieuws is ruis "
+    "(koersoverzichten, fondsen die iets kochten, algemene beschouwingen); noem dat "
+    "dan ook zo.\n\n" + ONDERAAN
 )
 
 SYSTEEM_BULL = (
-    "Je bent de optimist in een debat. Je geeft het sterkste eerlijke argument "
-    "om te kopen of te blijven zitten. Je mag niets verzinnen en geen zwak "
-    "argument opblazen: is de zaak zwak, zeg dat dan en geef jezelf een lage "
-    "overtuiging. Een eerlijke bull die toegeeft dat er weinig te halen valt, is "
-    "waardevoller dan een die altijd enthousiast is.\n\n" + ONDERAAN
+    "Je bent de optimist in een debat over de komende 14 dagen. Je geeft het "
+    "sterkste eerlijke argument dat dit symbool beter gaat doen dan zijn "
+    "referentie. Je mag niets verzinnen en geen zwak argument opblazen: is de zaak "
+    "zwak, zeg dat dan en geef jezelf een lage overtuiging.\n\n" + ONDERAAN
 )
 
 SYSTEEM_BEAR = (
-    "Je bent de pessimist in een debat. Je geeft het sterkste eerlijke argument "
-    "om niet te kopen of juist te verkopen. Je mag niets verzinnen en geen zwak "
-    "argument opblazen: is de zaak zwak, zeg dat dan en geef jezelf een lage "
-    "overtuiging. Een eerlijke bear die toegeeft dat er weinig mis is, is "
-    "waardevoller dan een die altijd somber is.\n\n" + ONDERAAN
+    "Je bent de pessimist in een debat over de komende 14 dagen. Je geeft het "
+    "sterkste eerlijke argument dat dit symbool slechter gaat doen dan zijn "
+    "referentie. Je mag niets verzinnen en geen zwak argument opblazen: is de zaak "
+    "zwak, zeg dat dan en geef jezelf een lage overtuiging.\n\n" + ONDERAAN
+)
+
+_KANS_REGELS = (
+    "Je beslist NIET of er gekocht of verkocht wordt. Dat doet de code met vaste "
+    "regels. Jij geeft een eerlijke kans en een verwacht extra rendement.\n\n"
+    "Wees gekalibreerd. Als je honderd keer 0,6 zegt, moet het ongeveer zestig keer "
+    "kloppen. Over 14 dagen beweegt een koers voor een groot deel door toeval; een "
+    "kans ver van 0,5 hoort bij een duidelijke reden in de gegevens. Je wordt achteraf "
+    "gescoord op hoe goed je kansen klopten, niet op hoe vaak je iets durfde."
 )
 
 SYSTEEM_RISK = (
-    "Je bent de risk manager en jij hakt de knoop door. Je leest beide analisten "
-    "en beide kanten van het debat, en kiest: KOOP, VERKOOP of NIETS.\n\n"
-    "Je regels:\n"
-    "* NIETS DOEN is de standaard. Handel alleen als er een duidelijke reden is.\n"
-    "* Twijfel je, geef dan een lage zekerheid. Onder 0,6 wordt er niet gehandeld, "
-    "en dat is prima.\n"
-    "* Elke trade kost geld aan kosten en slippage. Een klein voordeel is het niet "
-    "waard.\n"
-    "* Je kunt alleen KOOP kiezen als de positie er nog niet is, en alleen VERKOOP "
-    "als die er wel is. Dat staat erbij.\n"
-    "* Schrijf de onderbouwing zo dat iemand zonder handelservaring hem begrijpt.\n\n"
-    + ONDERAAN
+    "Je bent de risk manager. Je leest de kengetallen, het nieuws en beide kanten van "
+    "het debat, en schat in hoe dit symbool het de komende 14 kalenderdagen doet "
+    "tegenover zijn referentie.\n\n" + _KANS_REGELS + "\n\n" + ONDERAAN
+)
+
+SYSTEEM_ENKEL = (
+    "Je bent een nuchtere analist. Je leest de kengetallen en de nieuwskoppen, weegt "
+    "zelf de argumenten voor en tegen, en schat in hoe dit symbool het de komende 14 "
+    "kalenderdagen doet tegenover zijn referentie.\n\n" + _KANS_REGELS + "\n\n" + ONDERAAN
 )
 
 
 # ------------------------------------------------------------------ berichten
 
 
-def bericht_technisch(symbool: str, datum: str, kengetallen: dict) -> str:
-    regels = [f"Symbool: {symbool}", f"Beslisdag: {datum}", "", "Kengetallen:"]
-    for naam, waarde in kengetallen.items():
-        regels.append(f"  {naam}: {waarde}")
-    regels.append("")
-    regels.append(
-        "Wat laten deze kengetallen zien over de richting op korte termijn?"
-    )
+def _koppen_tekst(koppen: list[dict]) -> str:
+    if not koppen:
+        return "Nieuwskoppen: geen gevonden."
+    regels = [f"Nieuwskoppen ({len(koppen)}), nieuwste eerst:"]
+    for kop in koppen:
+        regels.append(f"  [{kop['gepubliceerd']}] {kop['titel']}")
+        samenvatting = (kop.get("samenvatting") or "")[:300]
+        if samenvatting:
+            regels.append(f"    {samenvatting}")
     return "\n".join(regels)
+
+
+def _positie_tekst(positie: dict[str, Any] | None) -> str:
+    if not positie:
+        return "Positie: geen."
+    return "\n".join(
+        [
+            "Positie: ja.",
+            f"  gekocht op {positie['gekocht_op']} voor {positie['koopprijs']:.4f} dollar per stuk",
+            f"  resultaat tot nu toe: {positie['resultaat_pct']:+.1f}%",
+            f"  dagen in bezit: {positie['dagen']}",
+            f"  reden van de aankoop: {positie['koopreden'] or '-'}",
+        ]
+    )
+
+
+def _portefeuille_tekst(p: dict[str, Any]) -> str:
+    return (
+        f"Portefeuille: {p['posities']} van de {p['max_posities']} plekken bezet, "
+        f"{p['belegd_pct']:.0f}% belegd, {p['crypto_pct']:.0f}% in crypto."
+    )
 
 
 def bericht_nieuws(symbool: str, datum: str, koppen: list[dict]) -> str:
-    regels = [f"Symbool: {symbool}", f"Beslisdag: {datum}", ""]
-    if not koppen:
-        regels.append("Er zijn geen nieuwskoppen gevonden voor dit symbool.")
-        regels.append("Geef dan signaal 'neutraal' en zekerheid 0.")
-        return "\n".join(regels)
-
-    regels.append(f"Nieuwskoppen ({len(koppen)}), nieuwste eerst:")
-    for kop in koppen:
-        regels.append(f"\n  [{kop['gepubliceerd']}] {kop['titel']}")
-        if kop.get("bron"):
-            regels.append(f"    bron: {kop['bron']}")
-        samenvatting = (kop.get("samenvatting") or "")[:400]
-        if samenvatting:
-            regels.append(f"    {samenvatting}")
-    regels.append("")
-    regels.append("Wat betekent dit nieuws voor de koers op korte termijn?")
-    return "\n".join(regels)
+    return "\n".join([f"Symbool: {symbool}", f"Beslisdag: {datum}", "", _koppen_tekst(koppen)])
 
 
 def bericht_debat(
-    symbool: str, datum: str, technisch: dict, nieuws: dict, heeft_positie: bool
+    symbool: str, datum: str, kenmerken: dict, koppen: list[dict], nieuws: dict,
+    positie: dict | None,
 ) -> str:
     return "\n".join(
         [
-            f"Symbool: {symbool}",
+            f"Symbool: {symbool}  (referentie: {kenmerken['referentie']})",
             f"Beslisdag: {datum}",
-            f"Positie in portefeuille: {'ja' if heeft_positie else 'nee'}",
             "",
-            "De technisch analist zegt:",
-            f"  signaal: {technisch.get('signaal', 'onbekend')} "
-            f"(zekerheid {technisch.get('zekerheid', 0)})",
-            f"  {technisch.get('samenvatting', '')}",
+            "Kengetallen (uitgerekend door de code):",
+            als_tekst(kenmerken),
+            "",
+            _koppen_tekst(koppen),
             "",
             "De nieuwsanalist zegt:",
-            f"  signaal: {nieuws.get('signaal', 'onbekend')} "
-            f"(zekerheid {nieuws.get('zekerheid', 0)})",
             f"  {nieuws.get('samenvatting', '')}",
+            f"  belangrijkste risico: {nieuws.get('belangrijkste_risico', '')}",
+            f"  gebeurtenis binnenkort: {'ja' if nieuws.get('gebeurtenis_binnenkort') else 'nee'}",
+            "",
+            _positie_tekst(positie),
             "",
             "Geef je argument.",
         ]
@@ -182,47 +199,53 @@ def bericht_debat(
 
 
 def bericht_risk(
-    symbool: str,
-    datum: str,
-    technisch: dict,
-    nieuws: dict,
-    bull: dict,
-    bear: dict,
-    heeft_positie: bool,
-    kas_eur: float,
-    max_per_trade_eur: float,
+    symbool: str, datum: str, kenmerken: dict, koppen: list[dict], nieuws: dict,
+    bull: dict, bear: dict, positie: dict | None, portefeuille: dict,
 ) -> str:
-    toegestaan = []
-    if heeft_positie:
-        toegestaan.append("VERKOOP")
-    elif kas_eur >= max_per_trade_eur:
-        toegestaan.append("KOOP")
-    toegestaan.append("NIETS")
-
     return "\n".join(
         [
-            f"Symbool: {symbool}",
+            f"Symbool: {symbool}  (referentie: {kenmerken['referentie']})",
             f"Beslisdag: {datum}",
-            f"Positie in portefeuille: {'ja' if heeft_positie else 'nee'}",
-            f"Kas: {kas_eur:.2f} euro, inleg per trade: {max_per_trade_eur:.2f} euro",
-            f"Toegestane acties nu: {', '.join(toegestaan)}",
             "",
-            f"Technisch analist: {technisch.get('signaal', 'onbekend')} "
-            f"(zekerheid {technisch.get('zekerheid', 0)})",
-            f"  {technisch.get('samenvatting', '')}",
+            "Kengetallen (uitgerekend door de code):",
+            als_tekst(kenmerken),
             "",
-            f"Nieuwsanalist: {nieuws.get('signaal', 'onbekend')} "
-            f"(zekerheid {nieuws.get('zekerheid', 0)})",
+            _koppen_tekst(koppen),
+            "",
+            "Nieuwsanalist:",
             f"  {nieuws.get('samenvatting', '')}",
+            f"  belangrijkste risico: {nieuws.get('belangrijkste_risico', '')}",
             "",
-            f"Bull (overtuiging {bull.get('overtuiging', 0)}):",
-            f"  {bull.get('argument', '')}",
+            f"Bull (overtuiging {bull.get('overtuiging', 0)}): {bull.get('argument', '')}",
             f"  sterkste punt: {bull.get('sterkste_punt', '')}",
-            "",
-            f"Bear (overtuiging {bear.get('overtuiging', 0)}):",
-            f"  {bear.get('argument', '')}",
+            f"Bear (overtuiging {bear.get('overtuiging', 0)}): {bear.get('argument', '')}",
             f"  sterkste punt: {bear.get('sterkste_punt', '')}",
             "",
-            "Wat doen we?",
+            _positie_tekst(positie),
+            _portefeuille_tekst(portefeuille),
+            "",
+            "Geef je kans en je verwachting.",
+        ]
+    )
+
+
+def bericht_enkel(
+    symbool: str, datum: str, kenmerken: dict, koppen: list[dict],
+    positie: dict | None, portefeuille: dict,
+) -> str:
+    return "\n".join(
+        [
+            f"Symbool: {symbool}  (referentie: {kenmerken['referentie']})",
+            f"Beslisdag: {datum}",
+            "",
+            "Kengetallen (uitgerekend door de code):",
+            als_tekst(kenmerken),
+            "",
+            _koppen_tekst(koppen),
+            "",
+            _positie_tekst(positie),
+            _portefeuille_tekst(portefeuille),
+            "",
+            "Weeg de argumenten voor en tegen, en geef je kans en je verwachting.",
         ]
     )

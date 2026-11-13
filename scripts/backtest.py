@@ -30,23 +30,25 @@ from bot import database, statistiek
 from bot.data.wisselkoers import Wisselkoers
 from bot.markt import Markt
 from bot.opzet import bouw_motor
-from bot.strategieen.benchmarks import KoopEnHoud
+from bot.strategieen.benchmarks import GelijkVerdeeld, KoopEnHoud
+
+MEETLAT = (KoopEnHoud, GelijkVerdeeld)
 
 
 def _reeks(con, portefeuille: str) -> tuple[list[str], list[float]]:
     rijen = con.execute(
-        "SELECT datum, totaal_eur FROM waarde WHERE portefeuille = ? ORDER BY datum",
+        "SELECT datum, totaal_usd FROM waarde WHERE portefeuille = ? ORDER BY datum",
         (portefeuille,),
     ).fetchall()
-    return [r["datum"] for r in rijen], [r["totaal_eur"] for r in rijen]
+    return [r["datum"] for r in rijen], [r["totaal_usd"] for r in rijen]
 
 
 def _resultaten(con, portefeuille: str) -> list[float]:
     return [
-        r["resultaat_eur"]
+        r["resultaat_usd"]
         for r in con.execute(
-            """SELECT resultaat_eur FROM trades
-               WHERE portefeuille = ? AND actie = 'VERKOOP' AND resultaat_eur IS NOT NULL
+            """SELECT resultaat_usd FROM trades
+               WHERE portefeuille = ? AND actie = 'VERKOOP' AND resultaat_usd IS NOT NULL
                ORDER BY datum""",
             (portefeuille,),
         )
@@ -80,6 +82,7 @@ def main() -> int:
                 str(Path(__file__).resolve().parent / "vernieuw_data.py"),
                 "--jaren", str(max(3.0, float(jaren) + 1.0)),
                 "--db", str(doel_pad),
+                "--alles",  # ook oudere dagen opnieuw, met dividend en splitsingen
             ],
             check=True,
         )
@@ -123,7 +126,7 @@ def main() -> int:
     print(f"\n{dagen} handelsdagen verwerkt.\n")
 
     # ---- uitkomst ----
-    start_kapitaal = float(cfg["algemeen"]["start_kapitaal_eur"])
+    start_kapitaal = float(cfg["algemeen"]["start_kapitaal_usd"])
     rap = cfg["rapport"]
 
     # Alle risicocijfers op dezelfde meetkalender: de dagen dat de Amerikaanse
@@ -134,7 +137,7 @@ def main() -> int:
 
     benchmark_reeksen: dict[str, tuple[list[str], list[float]]] = {}
     for deelnemer in motor.deelnemers:
-        if isinstance(deelnemer.strategie, KoopEnHoud):
+        if isinstance(deelnemer.strategie, MEETLAT):
             naam = deelnemer.portefeuille.naam
             benchmark_reeksen[naam] = statistiek.op_kalender(*_reeks(con, naam), kalender)
 
@@ -167,7 +170,7 @@ def main() -> int:
     print("\nIs dit al iets, of kan het nog geluk zijn?")
     print("(onthoud: dit is een backtest, dus ook een nette uitkomst bewijst niets)\n")
     for deelnemer, naam, datums, waarden, resultaten in regels:
-        if isinstance(deelnemer.strategie, KoopEnHoud):
+        if isinstance(deelnemer.strategie, MEETLAT):
             continue
         oordeel = statistiek.beoordeel(
             resultaten,
@@ -178,7 +181,7 @@ def main() -> int:
         print(f"  {naam}:")
         print(f"    {oordeel.uitleg}")
         if oordeel.aantal:
-            print(f"    gemiddeld resultaat per afgeronde trade: {oordeel.gemiddelde:+.2f} euro")
+            print(f"    gemiddeld resultaat per afgeronde trade: {oordeel.gemiddelde:+.2f} dollar")
 
         for bnaam, (bdatums, bwaarden) in benchmark_reeksen.items():
             p = statistiek.vergelijk_reeksen(

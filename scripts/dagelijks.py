@@ -102,15 +102,16 @@ def _haal_data_op(jaren: float, waarschuwingen: list[str], db: str | None = None
 def _ai_ronde(
     con, cfg: dict, markt: Markt, datum: str, nieuw_nieuws: bool, ingehaald: int
 ) -> list[str]:
-    """Laat de AI-analist nadenken over de nieuwste dag.
+    """Laat de AI-portefeuilles nadenken over de nieuwste dag.
 
     Geeft een paar korte regels terug voor het dagbericht. Gaat er hier iets mis
-    (geen sleutel, budget op, API onbereikbaar), dan stopt alleen de
-    AI-analist. De rest van de bot heeft zijn werk dan al gedaan.
+    (geen sleutel, budget op, API onbereikbaar), dan stopt alleen de AI. De rest
+    van de bot heeft zijn werk dan al gedaan.
     """
     from bot.ai.budget import Budget
     from bot.ai.kostenprognose import als_tekst, maak_prognose
     from bot.ai.ronde import ai_portefeuilles, denk_na, maak_client
+    from bot.data import kwartaalcijfers
     from bot.data import nieuws as mod_nieuws
     from bot.opzet import ai_symbolen
 
@@ -120,8 +121,12 @@ def _ai_ronde(
 
     print("\nAI-analist")
     print("-" * 60)
-    bericht: list[str] = []
+    kalender = cfg["rapport"]["kalender_symbool"]
+    if markt.heeft(kalender) and not markt.is_handelsdag(kalender, datum):
+        print(f"{datum} was geen beursdag: de AI beslist alleen op beursdagen.")
+        return []
 
+    bericht: list[str] = []
     if ingehaald > 1:
         tekst = (
             f"Er zijn {ingehaald} dagen ingehaald. De AI-analist beslist alleen over de "
@@ -140,37 +145,43 @@ def _ai_ronde(
         return ["AI-analist overgeslagen: geen API-key."]
 
     budget = Budget(con, cfg)
-    if budget.is_op():
-        print(budget.samenvatting())
-        print("Het budget van deze maand is op. De AI-analist slaat vandaag over.")
-        return [f"AI-analist overgeslagen: budget van {dollar(budget.max_usd, 2)} is op."]
-
     symbolen = ai_symbolen(cfg, markt)
     if nieuw_nieuws:
         aantal = mod_nieuws.vernieuw(con, symbolen)
         print(f"{aantal} nieuwskoppen opgehaald voor {len(symbolen)} symbolen.")
+        aandelen = [s for s in conf.laad()["watchlist"]["aandelen"] if s in symbolen]
+        n = kwartaalcijfers.vernieuw(con, aandelen)
+        print(f"Datum van de volgende kwartaalcijfers bekend voor {n} van {len(aandelen)} aandelen.")
 
     client = maak_client(con, cfg)
     kosten_vandaag = 0.0
-    for naam, model in portefeuilles:
-        print(f"\n  {naam}" + (f" (alles op {model})" if model else ""))
-        uitkomst = denk_na(con, cfg, client, markt, naam, datum, symbolen, model_override=model)
+    for p in portefeuilles:
+        naam = p["naam"]
+        print(f"\n  {naam} ({p['soort']}" + (f", alles op {p['model']})" if p["model"] else ")"))
+        uitkomst = denk_na(
+            con, cfg, client, markt, naam, datum, symbolen,
+            model_override=p["model"], soort=p["soort"],
+        )
         kosten_vandaag += uitkomst.kosten_usd
+        bruikbaar = sum(1 for b in uitkomst.beoordelingen.values() if b.bruikbaar)
+        kopen = sum(1 for o in uitkomst.orders if o.actie == "KOOP")
+        verkopen = sum(1 for o in uitkomst.orders if o.actie == "VERKOOP")
         if uitkomst.al_gedaan:
             print(f"    {uitkomst.al_gedaan} symbolen waren vandaag al beoordeeld; niet opnieuw betaald.")
-        print(f"    {len(uitkomst.orders)} orders klaargezet, kosten {dollar(uitkomst.kosten_usd, 4)}")
+        print(
+            f"    {bruikbaar} van {len(symbolen)} beoordeeld, {kopen} kopen, {verkopen} verkopen, "
+            f"{len(uitkomst.herbevestigd)} herbevestigd, kosten {dollar(uitkomst.kosten_usd, 4)}"
+        )
         if uitkomst.fouten:
             bericht.append(f"{naam}: {len(uitkomst.fouten)} fout(en), bijv. {uitkomst.fouten[0][:120]}")
         if uitkomst.gestopt:
             print(f"    GESTOPT: {uitkomst.gestopt}")
-            bericht.append(f"{naam} gestopt: {uitkomst.gestopt[:200]}")
-            break
+            bericht.append(f"{naam} gestopt (geen nieuwe aankopen): {uitkomst.gestopt[:200]}")
 
     print()
     print(budget.samenvatting())
     if cfg.get("modus") == "proefweek":
-        # In de proefweek is de vraag niet of 48 symbolen op Opus in een maand
-        # passen, maar wat de echte meting straks kost. Dat meet proef_ai_mix.
+        # In de proefweek is de vraag wat de echte meting straks kost.
         bericht.append(
             f"AI-kosten vandaag {dollar(kosten_vandaag, 2)}, proefweek tot nu toe "
             f"{dollar(budget.uitgegeven(), 2)} van {dollar(budget.max_usd, 2)}."
@@ -192,19 +203,22 @@ def _ai_ronde(
     return bericht
 
 
-def _schatting_echte_meting(con) -> str | None:
-    """Wat de echte meting per maand kost, gemeten aan proef_ai_mix en proef_ai_haiku.
+# De proefportefeuilles die precies zo werken als de echte meting.
+PROEF_ALS_ECHT = ("proef_ai_mix", "proef_ai_haiku", "proef_ai_enkel")
 
-    Gerekend met de gewone instellingen (15 symbolen), want zo draait de echte
-    meting straks.
+
+def _schatting_echte_meting(con) -> str | None:
+    """Wat de echte meting per maand kost, gemeten aan de proefportefeuilles.
+
+    Gerekend met de gewone instellingen (de AI-lijst uit config.yaml), want zo
+    draait de echte meting straks.
     """
     from bot.ai.kostenprognose import maak_prognose
 
     normaal = conf.laad()
     p = maak_prognose(con, normaal)
-    mix = p.per_portefeuille.get("proef_ai_mix")
-    haiku = p.per_portefeuille.get("proef_ai_haiku")
-    if mix is None:
+    delen = {n: p.per_portefeuille[n] for n in PROEF_ALS_ECHT if n in p.per_portefeuille}
+    if "proef_ai_mix" not in delen:
         return None
     rapport = 0.0
     for regel in p.uitleg:
@@ -213,12 +227,15 @@ def _schatting_echte_meting(con) -> str | None:
                 rapport = float(regel.rsplit("$", 1)[1].split()[0])
             except (IndexError, ValueError):
                 rapport = 0.0
-    totaal = mix + (haiku or 0.0) + rapport
+    totaal = sum(delen.values()) + rapport
     budget = float(normaal["ai"]["budget"]["max_usd_per_maand"])
     oordeel = "past" if totaal <= budget else "PAST NIET"
+    n = len(normaal.get("ai_watchlist", []))
+    uitsplitsing = ", ".join(f"{k.replace('proef_', '')} {dollar(v, 2)}" for k, v in delen.items())
     return (
-        f"Echte meting (mix + Haiku-controle, 15 symbolen) naar schatting {dollar(totaal, 2)} per maand "
-        f"tegen een budget van {dollar(budget, 2)}: {oordeel}. Gemeten over {p.rondes} ronde(s)."
+        f"Echte meting ({n} symbolen) naar schatting {dollar(totaal, 2)} per maand "
+        f"({uitsplitsing}) tegen een budget van {dollar(budget, 2)}: {oordeel}. "
+        f"Gemeten over {p.rondes} ronde(s)."
     )
 
 
@@ -405,7 +422,7 @@ def ronde(args) -> tuple[int, str | None]:
         print(f"\nEerste ronde. De meting begint op {start},")
         print(f"de laatste dag dat {kalender_symbool} handelde, zodat alle")
         print("portefeuilles op hetzelfde moment van start gaan.")
-        print("Elke portefeuille begint met 1.000 euro nep-geld.")
+        print("Elke portefeuille begint met 1.000 dollar nep-geld.")
     else:
         print(f"\nDe meting loopt sinds {start}.")
 
@@ -518,7 +535,7 @@ def ronde(args) -> tuple[int, str | None]:
 def main() -> int:
     p = argparse.ArgumentParser(description="De dagelijkse ronde van de bot")
     p.add_argument("--geen-data", action="store_true", help="koersen niet ophalen")
-    p.add_argument("--jaren", type=float, default=2.0, help="hoeveel geschiedenis ophalen")
+    p.add_argument("--jaren", type=float, default=3.0, help="hoeveel geschiedenis ophalen (MA200 en de backtest-eis hebben dit nodig)")
     p.add_argument("--tot", default=None, help="tot en met deze datum (JJJJ-MM-DD)")
     p.add_argument("--db", default=None, help="pad naar de database")
     p.add_argument("--start", default=None, help="startdatum van de meting vastleggen")

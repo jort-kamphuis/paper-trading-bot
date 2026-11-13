@@ -41,7 +41,7 @@ concurrency:
 jobs:
   ronde:
     runs-on: ubuntu-latest
-    # Een volle ronde in de proefweek (3 AI-portefeuilles op 48 symbolen) kan
+    # Een volle ronde in de proefweek (4 AI-portefeuilles op 46 symbolen) kan
     # ongeveer een uur duren. Zie ook de limiet van de ronde zelf hieronder.
     timeout-minutes: 150
     env:
@@ -88,7 +88,8 @@ jobs:
           python scripts/slank_maken.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # config.yaml verandert alleen na jouw /akkoord in Telegram.
+          # config.yaml verandert in de ronde nooit (ook niet na een akkoord: dan komt er
+          # een nieuwe portefeuille bij). Hij staat hier alleen voor de zekerheid.
           git add data/trading.db config.yaml
           # De proefweek heeft een eigen database; die blijft ook bewaard.
           if [ -f data/proefweek.db ]; then git add data/proefweek.db; fi
@@ -97,7 +98,7 @@ jobs:
             exit 0
           fi
           if [ -f .wijziging.txt ]; then
-            git commit -m "Akkoord via Telegram: instelling aangepast" -m "$(cat .wijziging.txt)"
+            git commit -m "Akkoord via Telegram: nieuwe portefeuille" -m "$(cat .wijziging.txt)"
           else
             git commit -m "Dagelijkse ronde $(date -u +%Y-%m-%d)"
           fi

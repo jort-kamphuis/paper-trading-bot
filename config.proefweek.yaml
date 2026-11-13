@@ -2,15 +2,20 @@
 # bovenop config.yaml. config.yaml zelf verandert niet: na de proefweek geldt
 # vanzelf weer alles zoals het daar staat.
 #
-# Waarom een proefweek: het gratis API-tegoed (100 dollar) verloopt op
-# 20 november 2026 om 00:00 UTC. Deze week wordt alles getest (GitHub Actions,
-# Telegram, AI-rondes, kosten, foutafhandeling, weekrapport, akkoordroute).
-# Niets hiervan telt mee in de echte meting.
+# Waarom een proefweek: alles testen (GitHub Actions, Telegram, AI-rondes,
+# kosten, foutafhandeling, weekrapport, akkoordroute) voordat de echte meting
+# begint. Niets hiervan telt mee in de echte meting.
+#
+# Het gratis API-tegoed (100 dollar) verloopt op 20 november 2026 om 00:00 UTC.
+# Opus draait daarom alleen tot en met 19 november. De proefrondes daarna
+# (20 en 21 november, zonder Opus) gebruiken de credits die je zelf bijzet.
 
 proefweek:
   # De laatste UTC-datum waarop een ronde als proefronde draait. De ronde van
-  # 19 november 00:30 UTC is de laatste; die van 20 november start de echte meting.
-  tot_en_met: "2026-11-19"
+  # 23 november 00:30 UTC (over vrijdag 20 november) is de laatste. Die van
+  # 24 november 00:30 UTC verwerkt maandag 23 november: de eerste dag van de
+  # echte meting.
+  tot_en_met: "2026-11-23"
   # Alles van de proefweek komt in een eigen database. trading.db blijft
   # onaangeroerd.
   database: data/proefweek.db
@@ -24,16 +29,17 @@ proefweek:
   # proefdatabase en duidelijk als test gemarkeerd.
   testvoorstel:
     strategie: momentum
-    parameter: terugblik_dagen
-    nieuwe_waarde: 90
+    parameter: terugblik_kalenderdagen
+    nieuwe_waarde: 120
 
   herinnering:
     datum: "2026-11-18"
     tekst: >-
-      Herinnering: zet voor 20 november 10 dollar aan credits bij in de
-      Anthropic-console (automatisch opwaarderen uit, limiet 6 dollar). Je
-      gratis tegoed verloopt op 20 november om 00:00 UTC, en de ronde van
-      20 november 00:30 UTC is de eerste van de echte meting.
+      Herinnering: zet voor 20 november ongeveer 40 dollar aan credits bij in de
+      Anthropic-console, met automatisch opwaarderen uit en de limiet op 40 dollar.
+      Je gratis tegoed verloopt op 20 november om 00:00 UTC. De proefrondes van
+      20 en 21 november (zonder Opus) en daarna de echte meting (vanaf maandag
+      23 november) gebruiken die credits.
 
   # Bij het omschakelen naar de echte meting wordt dit bedrag als correctie
   # geboekt (de proef op een kopie die op 13 november de API aanriep).
@@ -41,25 +47,29 @@ proefweek:
     correctie_usd: 0.2339
     correctie_reden: "proef op een kopie van de database riep op 2026-11-13 de API aan"
 
-# Alle 48 symbolen voor de AI (in plaats van de gewone 15).
+# Alle symbolen voor de AI. Na twee proefnachten met deze code kies je, op basis
+# van de gemeten kosten, de lijst voor de echte meting (config.yaml).
 ai_watchlist: alles
 
 ai:
-  # Drie AI-portefeuilles. 'model' zet alle rollen op dat ene model; zonder
-  # 'model' gelden de rollen uit config.yaml (de instellingen van de echte meting).
+  # Vier AI-portefeuilles. 'model' zet alle rollen op dat ene model; zonder
+  # 'model' gelden de rollen uit config.yaml (de instellingen van de echte
+  # meting). 'tot_en_met': na die UTC-datum doet de portefeuille niet meer mee.
   portefeuilles:
-    - {naam: proef_ai_opus, model: claude-opus-5-5}   # alle rollen op Opus 5.5
-    - {naam: proef_ai_mix}                            # precies zoals de echte meting
-    - {naam: proef_ai_haiku, model: claude-haiku-5-5} # de controle
+    - {naam: proef_ai_opus,  soort: debat, model: claude-opus-5-5, tot_en_met: "2026-11-19"}
+    - {naam: proef_ai_mix,   soort: debat}                            # zoals ai_analist
+    - {naam: proef_ai_haiku, soort: debat, model: claude-haiku-5-5}   # zoals ai_controle_haiku
+    - {naam: proef_ai_enkel, soort: enkel}                            # zoals ai_enkel
 
   # Opus 5.5 kan zijn denkwerk niet uitzetten. Met een krap plafond worden de
-  # antwoorden dan afgekapt, dus in de proefweek krijgt elke rol ruimte.
+  # antwoorden dan afgekapt, dus in de proefweek krijgt elke rol ruimte. Een
+  # plafond is geen kostenknop: je betaalt voor wat het model echt schrijft.
   max_tokens:
-    technisch: 4000
-    nieuws:    4000
-    bull:      4000
-    bear:      4000
-    risk:      6000
+    nieuws: 4000
+    bull:   4000
+    bear:   4000
+    risk:   6000
+    enkel:  6000
 
   budget:
     max_usd_per_maand: 90.00
@@ -72,6 +82,5 @@ challenger:
   # In de proefweek vraagt de bot altijd om akkoord, ook als B niet beter was
   # (dat staat er dan bij). Anders test je de akkoordroute alleen bij toeval.
   altijd_vragen: true
-  # Een akkoord in de proefweek is een droogtest: alles wordt verwerkt en
-  # vastgelegd in de proefdatabase, maar config.yaml wordt niet aangepast.
+  # Een akkoord in de proefweek wordt gemarkeerd als test.
   droogtest: true

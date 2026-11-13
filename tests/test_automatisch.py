@@ -137,12 +137,17 @@ def test_dagbericht_alles_in_nederlandse_notatie(con):
     pf.koop("AAPL", "2026-11-13", "2026-11-12", 200.0, "USD", 1.10, zekerheid=0.75)
     pf.bewaar(con)
     pf.bewaar_waarde(con, "2026-11-13", {"AAPL": 182.0})
+    pf.verkoop("AAPL", "2026-11-13", "2026-11-12", 150.0, "USD", 1.10)
+    pf.bewaar(con)
+    con.execute("INSERT INTO wisselkoersen (datum, eurusd) VALUES ('2026-11-12', 1.10)")
     con.commit()
     tekst = overzicht.telegram_dagbericht(con, "2026-11-13")
     import re
 
     assert not re.search(r"\d\.\d+%", tekst), "procenten met een punt"
-    assert "zekerheid 0,75" in tekst
+    assert "kans 0,75" in tekst
+    assert "euro" not in tekst.split("Trades")[1], "een resultaat in dollars heet geen euro"
+    assert re.search(r"verkoop AAPL, -\$\d+,\d{2}", tekst)
     assert "€" in tekst and re.search(r"€\d{1,3}(\.\d{3})*,\d{2}", tekst)
 
 

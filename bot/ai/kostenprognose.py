@@ -12,7 +12,6 @@ Kiezen doet de gebruiker.
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from dataclasses import dataclass, field
 
@@ -27,9 +26,6 @@ WEKEN_PER_MAAND = 365.25 / 12 / 7
 # Zo heet een besluit waarvoor geen enkele API-aanroep nodig was.
 GEEN_KOERS = "geen koers op deze dag"
 
-# Een "sterk signaal" voor de voorstel-berekening: een analist die niet
-# neutraal is en minstens deze zekerheid heeft.
-STERK = 0.7
 
 
 @dataclass
@@ -65,8 +61,6 @@ def _gemiddelde(waarden: list[float]) -> float | None:
 def maak_prognose(con: sqlite3.Connection, cfg: dict) -> Prognose:
     budget = float(cfg["ai"]["budget"]["max_usd_per_maand"])
     ai_lijst = list(cfg.get("ai_watchlist", []))
-    n_crypto = sum(1 for s in ai_lijst if is_crypto(s))
-    n_aandeel = len(ai_lijst) - n_crypto
 
     rondes = con.execute("SELECT COUNT(DISTINCT datum) n FROM ai_besluiten").fetchone()["n"]
     uitgegeven = float(
@@ -87,19 +81,18 @@ def maak_prognose(con: sqlite3.Connection, cfg: dict) -> Prognose:
             float(b["kosten_usd"] or 0.0)
         )
 
+    # De AI beslist alleen op beursdagen, dus ook crypto telt ongeveer 21 dagen
+    # per maand.
     totaal = 0.0
     for pf, soorten in sorted(per_pf.items()):
         alles = soorten["crypto"] + soorten["aandeel"]
-        algemeen = _gemiddelde(alles) or 0.0
-        per_aandeel = _gemiddelde(soorten["aandeel"])
-        per_crypto = _gemiddelde(soorten["crypto"])
-        maand = (per_aandeel if per_aandeel is not None else algemeen) * n_aandeel * BEURSDAGEN_PER_MAAND
-        maand += (per_crypto if per_crypto is not None else algemeen) * n_crypto * CRYPTODAGEN_PER_MAAND
+        per_symbool_dag = _gemiddelde(alles) or 0.0
+        maand = per_symbool_dag * len(ai_lijst) * BEURSDAGEN_PER_MAAND
         prognose.per_portefeuille[pf] = maand
         totaal += maand
         prognose.uitleg.append(
-            f"{pf}: gemiddeld ${algemeen:.4f} per symbool-dag "
-            f"({len(alles)} gemeten), naar schatting ${maand:.2f} per maand"
+            f"{pf}: gemiddeld ${per_symbool_dag:.4f} per symbool-dag "
+            f"({len(alles)} gemeten), naar schatting ${maand:.2f} per maand bij {len(ai_lijst)} symbolen"
         )
     # Het weekrapport kost ook iets: een vraag per week.
     rapport = con.execute(
@@ -118,66 +111,24 @@ def maak_prognose(con: sqlite3.Connection, cfg: dict) -> Prognose:
     if prognose.past:
         return prognose
 
-    # ---- het past niet: wat zou helpen? ----
+    # ---- het past niet: wat zou helpen? Niets wordt hier aangepast. ----
     tekort = totaal - budget
+    for voorvoegsel, wat, nadeel in (
+        ("ai_controle", "Controleportefeuille uit", "dan weet je niet meer of het duurdere model zijn geld waard is"),
+        ("ai_enkel", "ai_enkel uit", "dan weet je niet meer of het debat iets toevoegt"),
+    ):
+        deel = sum(m for p, m in prognose.per_portefeuille.items() if p.startswith(voorvoegsel))
+        if deel:
+            prognose.voorstellen.append(f"{wat}: scheelt ${deel:.2f} per maand, maar {nadeel}.")
 
-    # 1. De controleportefeuille uitzetten.
-    controle = {pf: m for pf, m in prognose.per_portefeuille.items() if pf.startswith("ai_controle")}
-    if controle:
-        bespaard = sum(controle.values())
-        prognose.voorstellen.append(
-            f"Controleportefeuille uit: scheelt ${bespaard:.2f} per maand, maar dan weet je "
-            f"niet meer of het duurdere model zijn geld waard is."
-        )
-
-    # 2. Minder symbolen voor de AI.
     per_symbool = totaal / max(1, len(ai_lijst))
     weg = int(-(-tekort // per_symbool)) if per_symbool > 0 else 0
     if 0 < weg < len(ai_lijst):
         prognose.voorstellen.append(
             f"Minder symbolen voor de AI: ongeveer {weg} minder (van {len(ai_lijst)} naar "
             f"{len(ai_lijst) - weg}). Elk symbool kost gemiddeld ${per_symbool:.2f} per maand. "
-            f"Wel minder trades, dus nog langer wachten op een uitspraak."
+            f"Dat moet vastliggen voor de start; tijdens de meting verandert de lijst niet."
         )
-
-    # 3. Het debat alleen bij een sterk signaal.
-    # De analisten draaien hoe dan ook; alleen het debat (bull, bear, risk)
-    # valt weg. Wat de analisten per besluit kosten, rekenen we uit hun eigen
-    # boekingen, zodat dat niet als besparing meetelt.
-    analisten = con.execute(
-        "SELECT COALESCE(SUM(kosten_usd), 0) s FROM ai_kosten WHERE rol IN ('technisch', 'nieuws')"
-    ).fetchone()["s"]
-    analist_per_besluit = float(analisten) / len(besluiten) if besluiten else 0.0
-
-    gedebatteerd, zou_blijven, bespaard = 0, 0, 0.0
-    for b in besluiten:
-        if b["overgeslagen"]:
-            continue  # er was geen debat
-        try:
-            stappen = json.loads(b["stappen"] or "{}")
-        except json.JSONDecodeError:
-            continue
-        gedebatteerd += 1
-        sterk = any(
-            (stappen.get(r) or {}).get("signaal") not in (None, "neutraal")
-            and float((stappen.get(r) or {}).get("zekerheid") or 0) >= STERK
-            for r in ("technisch", "nieuws")
-        )
-        if sterk:
-            zou_blijven += 1
-        else:
-            bespaard += max(0.0, float(b["kosten_usd"] or 0.0) - analist_per_besluit)
-    gemeten = sum(float(b["kosten_usd"] or 0.0) for b in besluiten)
-    if gedebatteerd and gemeten > 0:
-        aandeel = bespaard / gemeten
-        prognose.voorstellen.append(
-            f"Debat alleen bij een sterk signaal (een analist met zekerheid {STERK} of meer): "
-            f"scheelt naar schatting {100 * aandeel:.0f}%, ongeveer ${totaal * aandeel:.2f} per "
-            f"maand. Maar dan was er bij maar {zou_blijven} van de {gedebatteerd} debatten "
-            f"nog een debat geweest. Zonder debat beslist de AI altijd NIETS, dus hij zou dan "
-            f"veel minder handelen en je meet een andere AI-analist dan nu."
-        )
-
     return prognose
 
 

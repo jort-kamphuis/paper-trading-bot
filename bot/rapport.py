@@ -17,7 +17,10 @@ from datetime import date, timedelta
 
 from bot import statistiek
 
-MEETLATTEN = ("benchmark_spy", "benchmark_btc")
+# Waar elke strategie tegen wordt afgezet. gelijk_alle (gelijk verdeeld over
+# alle symbolen) is de eerlijkste: wint een strategie daar niet van, dan voegde
+# het kiezen niets toe. gelijk_ai bestaat alleen als de AI een deel volgt.
+MEETLATTEN = ("benchmark_spy", "benchmark_btc", "gelijk_alle", "gelijk_ai")
 
 
 @dataclass
@@ -31,7 +34,7 @@ class Vergelijking:
 class Kerncijfers:
     portefeuille: str
     gestart_op: str
-    waarde_eur: float
+    waarde_usd: float
     rendement_pct: float
     rendement_week_pct: float | None
     trades: int
@@ -57,7 +60,7 @@ def kalender(con: sqlite3.Connection, cfg: dict) -> list[str]:
 
 def _reeks(con: sqlite3.Connection, pf: str, tot: str) -> list[sqlite3.Row]:
     return con.execute(
-        """SELECT datum, totaal_eur, posities_eur FROM waarde
+        """SELECT datum, totaal_usd, posities_usd FROM waarde
            WHERE portefeuille = ? AND datum <= ? ORDER BY datum""",
         (pf, tot),
     ).fetchall()
@@ -68,7 +71,7 @@ def _rendement_tussen(rijen: list[sqlite3.Row], van: str) -> float | None:
     voor = [r for r in rijen if r["datum"] <= van]
     if not voor or not rijen:
         return None
-    return statistiek.rendement_pct(voor[-1]["totaal_eur"], rijen[-1]["totaal_eur"])
+    return statistiek.rendement_pct(voor[-1]["totaal_usd"], rijen[-1]["totaal_usd"])
 
 
 def kerncijfers(
@@ -81,15 +84,15 @@ def kerncijfers(
 
     start = float(info["start_kapitaal"])
     datums, waarden = statistiek.op_kalender(
-        [r["datum"] for r in rijen], [r["totaal_eur"] for r in rijen], kal
+        [r["datum"] for r in rijen], [r["totaal_usd"] for r in rijen], kal
     )
     week_terug = (date.fromisoformat(tot) - timedelta(days=7)).isoformat()
 
     resultaten = [
-        r["resultaat_eur"]
+        r["resultaat_usd"]
         for r in con.execute(
-            """SELECT resultaat_eur FROM trades
-               WHERE portefeuille = ? AND actie = 'VERKOOP' AND resultaat_eur IS NOT NULL
+            """SELECT resultaat_usd FROM trades
+               WHERE portefeuille = ? AND actie = 'VERKOOP' AND resultaat_usd IS NOT NULL
                  AND datum <= ?""",
             (pf, tot),
         )
@@ -97,14 +100,14 @@ def kerncijfers(
     trades = con.execute(
         "SELECT COUNT(*) n FROM trades WHERE portefeuille = ? AND datum <= ?", (pf, tot)
     ).fetchone()["n"]
-    belegd = [r["posities_eur"] / r["totaal_eur"] for r in rijen if r["totaal_eur"] > 0]
+    belegd = [r["posities_usd"] / r["totaal_usd"] for r in rijen if r["totaal_usd"] > 0]
 
     rap = cfg["rapport"]
     return Kerncijfers(
         portefeuille=pf,
         gestart_op=info["gestart_op"] or rijen[0]["datum"],
-        waarde_eur=rijen[-1]["totaal_eur"],
-        rendement_pct=statistiek.rendement_pct(start, rijen[-1]["totaal_eur"]),
+        waarde_usd=rijen[-1]["totaal_usd"],
+        rendement_pct=statistiek.rendement_pct(start, rijen[-1]["totaal_usd"]),
         rendement_week_pct=_rendement_tussen(rijen, week_terug),
         trades=trades,
         afgerond=len(resultaten),
@@ -126,8 +129,8 @@ def vergelijk(
     con: sqlite3.Connection, a: str, b: str, tot: str, kal: list[str]
 ) -> Vergelijking | None:
     """Vergelijk portefeuille a met b over de dagen dat ze allebei bestonden."""
-    ra = {r["datum"]: r["totaal_eur"] for r in _reeks(con, a, tot)}
-    rb = {r["datum"]: r["totaal_eur"] for r in _reeks(con, b, tot)}
+    ra = {r["datum"]: r["totaal_usd"] for r in _reeks(con, a, tot)}
+    rb = {r["datum"]: r["totaal_usd"] for r in _reeks(con, b, tot)}
     gedeeld = [d for d in kal if d in ra and d in rb]
     if len(gedeeld) < 2:
         return None
@@ -185,7 +188,7 @@ def blok(k: Kerncijfers) -> list[str]:
     r = [k.portefeuille]
     r.append(
         f"  rendement {_pct(k.rendement_pct)} (deze week {_pct(k.rendement_week_pct)}), "
-        f"waarde €{getal(k.waarde_eur, 2)}"
+        f"waarde ${getal(k.waarde_usd, 2)}"
     )
     if k.is_meetlat:
         r.append(f"  grootste daling {_pct(k.max_daling_pct, teken=False)}")
@@ -197,7 +200,8 @@ def blok(k: Kerncijfers) -> list[str]:
     if k.belegd_pct is not None:
         r.append(f"  gemiddeld belegd: {_pct(k.belegd_pct, teken=False)} van het geld")
     for v in k.vergelijkingen:
-        naam = v.tegen.replace("benchmark_", "").upper()
+        naam = {"benchmark_spy": "SPY", "benchmark_btc": "BTC", "gelijk_alle": "gelijk verdeeld (alle)",
+                "gelijk_ai": "gelijk verdeeld (AI-lijst)"}.get(v.tegen, v.tegen)
         r.append(f"  tegen {naam}: {getal(v.verschil_pp, 1, teken=True)} procentpunt ({_p(v.p_waarde)})")
     if k.oordeel:
         r.append(f"  {k.oordeel.uitleg}")
@@ -222,7 +226,7 @@ def cijfers_als_tekst(cijfers: list[Kerncijfers], tot: str, start: str | None) -
         regels.append("")
     regels.append(
         "Let op bij de vergelijking: de meetlatten zetten alles in een keer in de markt, "
-        "de strategieën maximaal 100 euro per trade. 'Gemiddeld belegd' laat zien hoeveel "
-        "geld er werkelijk aan het werk was."
+        "de strategieën 10% per positie (hooguit 10 posities). 'Gemiddeld belegd' laat zien "
+        "hoeveel geld er werkelijk aan het werk was. Alles in dollars, inclusief dividend."
     )
     return "\n".join(regels)

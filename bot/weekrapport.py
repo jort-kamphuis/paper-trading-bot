@@ -20,7 +20,7 @@ from datetime import date, datetime, timezone
 from bot import challenger, rapport
 from bot.ai.budget import Budget, BudgetOp
 from bot.challenger import Voorstel
-from bot.tekst import dollar
+from bot.tekst import dollar, getal
 from bot.opzet import SLEUTEL_START
 
 
@@ -64,7 +64,7 @@ def _proef_tekst(con: sqlite3.Connection, cfg: dict, tot: str, kal: list[str]) -
         stand = ""
         if cijfers:
             ra, rb, _ = cijfers
-            stand = f" Tot nu toe: huidig {ra:+.1f}%, voorstel {rb:+.1f}%."
+            stand = f" Tot nu toe: huidig {getal(ra, 1, teken=True)}%, voorstel {getal(rb, 1, teken=True)}%."
         if c["status"] == "loopt":
             regels.append(
                 f"  Challenger {c['id']}: {c['strategie']}.{c['parameter']} "
@@ -160,23 +160,34 @@ def maak(
                 ai_regels.append("\nVoorstel: geen. Er verandert niets.")
             else:
                 reden = challenger.toets_voorstel(cfg, v, loopt_al=bool(challenger.actieve(con)))
-                voorstel_json = {**v.__dict__, "afgewezen_door_bot": reden}
+                toets_tekst = None
+                if reden is None:
+                    # Eerst de backtest: kiezen op de eerdere jaren, controleren op
+                    # het laatste jaar. Zakt het voorstel, dan start het niet.
+                    from bot.challenger_toets import toets as backtest_toets
+
+                    geslaagd, toets_tekst = backtest_toets(con, cfg, v)
+                    if not geslaagd:
+                        reden = f"de backtest is niet gehaald ({toets_tekst})"
+                voorstel_json = {**v.__dict__, "afgewezen_door_bot": reden, "backtest": toets_tekst}
                 if reden:
                     ai_regels.append(
                         f"\nVoorstel van Claude: {v.strategie}.{v.parameter} naar "
                         f"{challenger._mooi(v.nieuwe_waarde)}. Niet gestart: {reden}."
                     )
                 else:
-                    nummer = challenger.start(con, cfg, v, voorgesteld_op=tot, gestart_op=tot)
+                    nummer = challenger.start(con, cfg, v, voorgesteld_op=tot, gestart_op=tot, toets=toets_tekst)
                     huidig = cfg["strategieen"][v.strategie][v.parameter]
                     weken = int(cfg["challenger"]["weken"])
                     ai_regels.append(
                         f"\nVoorstel: {v.strategie}.{v.parameter} van {challenger._mooi(huidig)} "
                         f"naar {challenger._mooi(v.nieuwe_waarde)}.\n{v.onderbouwing}\n"
+                        f"Backtest: {toets_tekst}\n"
                         f"Dit start als challenger {nummer}: vanaf de volgende ronde draaien twee "
-                        f"nieuwe portefeuilles van 1.000 euro naast elkaar, een met de huidige en "
-                        f"een met de voorgestelde instelling. Na {weken} weken krijg je de uitslag. "
-                        f"Er verandert pas iets aan de echte instellingen na jouw akkoord."
+                        f"nieuwe portefeuilles naast elkaar, een met de huidige en een met de "
+                        f"voorgestelde instelling. Na {weken} weken krijg je de uitslag. Een lopende "
+                        f"portefeuille verandert nooit; na jouw akkoord gaat de nieuwe versie als "
+                        f"eigen portefeuille verder."
                     )
 
     # ---- 3b. alleen in de proefweek: een testvoorstel ----

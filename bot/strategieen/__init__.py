@@ -2,28 +2,29 @@
 
 from __future__ import annotations
 
-from bot.strategieen.basis import Order, Strategie
-from bot.strategieen.benchmarks import KoopEnHoud
+from bot.strategieen.basis import DagContext, Order, Strategie
+from bot.strategieen.benchmarks import GelijkVerdeeld, KoopEnHoud
 from bot.strategieen.mean_reversion import MeanReversion
 from bot.strategieen.momentum import Momentum
 from bot.strategieen.trend import TrendVolgend
 
 __all__ = [
+    "DagContext",
     "Order",
     "Strategie",
     "Momentum",
     "MeanReversion",
     "TrendVolgend",
     "KoopEnHoud",
+    "GelijkVerdeeld",
     "maak_strategieen",
 ]
 
 
 def maak_strategieen(cfg: dict) -> list[Strategie]:
-    """Maak alle strategieën die in config.yaml op 'actief: true' staan.
+    """Maak alle regelstrategieën die in config.yaml op 'actief: true' staan.
 
-    De benchmarks worden hier niet gemaakt: die krijgen elk een eigen
-    portefeuille en worden door de motor apart aangemaakt.
+    De meetlatten worden hier niet gemaakt; die maakt bot/opzet.py.
     """
     s = cfg["strategieen"]
     uitkomst: list[Strategie] = []

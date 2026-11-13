@@ -2,6 +2,11 @@
 
 De gedachte: koersen die sterk gestegen zijn, stijgen vaak nog even door.
 We vergelijken alle symbolen met elkaar en kopen de sterkste.
+
+Twee keuzes die het eerlijk houden:
+* De terugblik is in kalenderdagen (90), voor aandelen en crypto gelijk.
+* We rangschikken op rendement gedeeld door de schommeling. Anders staat
+  vanzelf bovenaan wat het wildst beweegt, en dat is meestal crypto.
 """
 
 from __future__ import annotations
@@ -9,75 +14,67 @@ from __future__ import annotations
 from bot.markt import Markt
 from bot.portefeuille import Positie
 from bot.strategieen.basis import Order, Strategie
+from bot.tekst import getal
 
 
 class Momentum(Strategie):
     naam = "momentum"
 
+    def __init__(self, instellingen: dict):
+        super().__init__(instellingen)
+        self.max_posities = int(self.instellingen.get("aantal_posities", 10))
+
     def besluit(
         self, datum: str, markt: Markt, symbolen: list[str], posities: dict[str, Positie]
     ) -> list[Order]:
-        terugblik = int(self.instellingen["terugblik_dagen"])
-        aantal = int(self.instellingen["aantal_posities"])
+        terugblik = int(self.instellingen["terugblik_kalenderdagen"])
         buiten_top = int(self.instellingen["verkoop_buiten_top"])
-        min_stijging = float(self.instellingen["min_stijging_pct"])
 
-        # Rangschik alle symbolen op hun stijging over de terugblikperiode.
-        scores: list[tuple[str, float]] = []
+        scores: list[tuple[str, float, float]] = []
         for symbool in symbolen:
-            if markt.bar(symbool, datum) is None:
-                continue  # dit symbool handelde vandaag niet
-            rendement = markt.kengetal(symbool, datum, f"rend{terugblik}")
-            if rendement is None:
+            score = markt.gecorrigeerd_rendement(symbool, datum, terugblik)
+            rend = markt.kalender_rendement(symbool, datum, terugblik)
+            if score is None or rend is None:
                 continue
-            scores.append((symbool, rendement))
-
+            scores.append((symbool, score, rend))
         if not scores:
             return []
 
         scores.sort(key=lambda x: x[1], reverse=True)
-        rang = {symbool: i + 1 for i, (symbool, _) in enumerate(scores)}
-        per_symbool = dict(scores)
+        rang = {s: i + 1 for i, (s, _, _) in enumerate(scores)}
+        info = {s: (sc, r) for s, sc, r in scores}
+        dag = self.dag
+        wacht_verkoop = dag.wachtende_verkopen if dag else set()
 
         orders: list[Order] = []
-
-        # Eerst verkopen: alles wat uit de ruimere top is gevallen.
-        for symbool in list(posities):
-            plek = rang.get(symbool)
-            if plek is None:
-                continue  # geen koers vandaag; morgen opnieuw kijken
-            if plek > buiten_top:
-                orders.append(
-                    Order(
-                        symbool=symbool,
-                        actie="VERKOOP",
-                        reden=(
-                            f"uit de top {buiten_top} gevallen (plek {plek} van {len(scores)}, "
-                            f"{terugblik}-daags rendement {per_symbool[symbool]:+.1f}%)"
-                        ),
-                    )
-                )
-
-        # Dan kopen: de sterkste namen die we nog niet hebben.
-        verkocht = {o.symbool for o in orders}
-        plekken_vrij = aantal - (len(posities) - len(verkocht))
-        for symbool, rendement in scores[:aantal]:
-            if plekken_vrij <= 0:
-                break
-            if symbool in posities or symbool in verkocht:
+        verkocht: set[str] = set()
+        for symbool in posities:
+            if symbool in wacht_verkoop:
                 continue
-            if rendement < min_stijging:
+            plek = rang.get(symbool)
+            if plek is None or plek > buiten_top:
+                waarom = "geen rendement te berekenen" if plek is None else (
+                    f"uit de top {buiten_top} gevallen (plek {plek} van {len(scores)})"
+                )
+                orders.append(Order(symbool=symbool, actie="VERKOOP", reden=waarom))
+                verkocht.add(symbool)
+
+        vrij = self.vrije_plekken(posities, na_verkopen=verkocht)
+        bezet = self.bezet(posities)
+        for symbool, score, rend in scores[: self.max_posities]:
+            if vrij <= 0:
+                break
+            if symbool in bezet or score <= 0:
                 continue
             orders.append(
                 Order(
                     symbool=symbool,
                     actie="KOOP",
                     reden=(
-                        f"plek {rang[symbool]} van {len(scores)} op {terugblik}-daags "
-                        f"rendement ({rendement:+.1f}%)"
+                        f"plek {rang[symbool]} van {len(scores)}: {terugblik} dagen "
+                        f"{getal(rend, 1, teken=True)}%, gecorrigeerd voor schommeling {getal(score, 2)}"
                     ),
                 )
             )
-            plekken_vrij -= 1
-
+            vrij -= 1
         return orders

@@ -78,15 +78,15 @@ def test_de_kas_blijft_gelijk_bij_een_tweede_run(con, cfg_min, vaste_wisselkoers
     motor.voeg_toe(KooptOpEenDag(datums[1]), ["AAA"])
     motor.draai_periode(datums[0], datums[3])
     kas_na_een = con.execute(
-        "SELECT kas_eur FROM portefeuilles WHERE naam='test_strategie'"
-    ).fetchone()["kas_eur"]
+        "SELECT kas_usd FROM portefeuilles WHERE naam='test_strategie'"
+    ).fetchone()["kas_usd"]
 
     motor2 = Motor(con, cfg_min, markt, vaste_wisselkoers)
     motor2.voeg_toe(KooptOpEenDag(datums[1]), ["AAA"])
     motor2.draai_periode(datums[0], datums[3])
     kas_na_twee = con.execute(
-        "SELECT kas_eur FROM portefeuilles WHERE naam='test_strategie'"
-    ).fetchone()["kas_eur"]
+        "SELECT kas_usd FROM portefeuilles WHERE naam='test_strategie'"
+    ).fetchone()["kas_usd"]
 
     assert kas_na_twee == pytest.approx(kas_na_een)
 
@@ -183,23 +183,23 @@ def test_na_een_storing_klopt_ook_het_geheugen_weer(con, cfg_min, vaste_wisselko
     motor.voeg_toe(Struikelt(datums[1]), ["AAA"])
 
     motor.draai_dag(datums[0])
-    kas_voor = motor.deelnemers[0].portefeuille.kas_eur
+    kas_voor = motor.deelnemers[0].portefeuille.kas_usd
 
     with pytest.raises(RuntimeError):
         motor.draai_dag(datums[1])
 
     # De aankoop van dag 2 is teruggedraaid, dus de kas moet weer de oude zijn.
     pf = motor.deelnemers[0].portefeuille
-    assert pf.kas_eur == pytest.approx(kas_voor), "het geheugen loopt uit de pas"
+    assert pf.kas_usd == pytest.approx(kas_voor), "het geheugen loopt uit de pas"
     assert pf.posities == {}, "er staat een positie in het geheugen die niet in de database zit"
     assert pf.nieuwe_trades == []
     # En de order van gisteren staat nog netjes klaar.
     assert len(motor.deelnemers[0].wachtrij) == 1
 
     uit_db = con.execute(
-        "SELECT kas_eur FROM portefeuilles WHERE naam='test_strategie'"
-    ).fetchone()["kas_eur"]
-    assert pf.kas_eur == pytest.approx(uit_db)
+        "SELECT kas_usd FROM portefeuilles WHERE naam='test_strategie'"
+    ).fetchone()["kas_usd"]
+    assert pf.kas_usd == pytest.approx(uit_db)
 
 
 class KooptAlles(Strategie):
@@ -321,12 +321,12 @@ def test_portefeuille_wordt_niet_opnieuw_aangemaakt(con, cfg_min, vaste_wisselko
     motor = Motor(con, cfg_min, markt, vaste_wisselkoers)
     motor.voeg_toe(KooptOpEenDag(datums[0]), ["AAA"])
     motor.draai_periode(datums[0], datums[2])
-    kas = motor.deelnemers[0].portefeuille.kas_eur
+    kas = motor.deelnemers[0].portefeuille.kas_usd
     assert kas < 1000.0  # er is gekocht
 
     motor2 = Motor(con, cfg_min, markt, vaste_wisselkoers)
     motor2.voeg_toe(KooptOpEenDag(datums[0]), ["AAA"])
-    assert motor2.deelnemers[0].portefeuille.kas_eur == pytest.approx(kas)
+    assert motor2.deelnemers[0].portefeuille.kas_usd == pytest.approx(kas)
     assert "AAA" in motor2.deelnemers[0].portefeuille.posities
     assert con.execute("SELECT COUNT(*) n FROM portefeuilles").fetchone()["n"] == 1
 

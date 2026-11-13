@@ -14,10 +14,16 @@ DB_PAD = PROJECT / "data" / "trading.db"
 
 
 def laad(pad: Path | None = None) -> dict[str, Any]:
-    """Lees config.yaml in als een gewone dictionary."""
+    """Lees config.yaml in als een gewone dictionary.
+
+    'ai_watchlist: alles' wordt hier uitgeschreven tot alle symbolen.
+    """
     pad = pad or CONFIG_PAD
     with open(pad, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        cfg = yaml.safe_load(f)
+    if cfg.get("ai_watchlist") == "alles":
+        cfg["ai_watchlist"] = alle_symbolen(cfg)
+    return cfg
 
 
 def laad_env() -> None:

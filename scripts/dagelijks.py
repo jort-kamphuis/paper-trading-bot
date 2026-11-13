@@ -481,6 +481,15 @@ def ronde(args) -> tuple[int, str | None]:
     else:
         print("Geen nieuwe koersdag voor de motor.")
 
+    # ---- 4b. kansen van de AI scoren waarvan de horizon voorbij is ----
+    # Kost niets (alleen koersen). Nu, omdat alle koersen er nu zijn; na de
+    # ronde wordt de database klein gemaakt.
+    from bot.ai import kalibratie
+
+    gescoord = kalibratie.scoor(con, markt, cfg)
+    if gescoord:
+        print(f"{gescoord} kansen van de AI gescoord tegen wat er echt gebeurde.")
+
     # ---- 5. de AI-analist ----
     ai_regels: list[str] = []
     if not args.geen_ai and not _ai_mag(args):

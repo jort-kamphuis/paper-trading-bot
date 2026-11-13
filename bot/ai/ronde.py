@@ -88,6 +88,7 @@ def _lees_beoordeling(con: sqlite3.Connection, pf: str, symbool: str, datum: str
         koppen=json.loads(rij["koppen"] or "[]"),
         kosten_usd=rij["kosten_usd"] or 0.0,
         probleem=rij["overgeslagen"],
+        vraag=rij["vraag"] or "",
     )
 
 
@@ -103,15 +104,15 @@ def _bewaar_beoordeling(
         """INSERT INTO ai_besluiten
            (portefeuille, symbool, datum, actie, onderbouwing, zekerheid, stappen, koppen,
             koppen_gezien, kosten_usd, overgeslagen, nieuws_tot, gemaakt_op,
-            kans, verwacht_pct, referentie, horizon_dagen)
-           VALUES (?,?,?,'NIETS',?,?,?,?,?,?,?,?,?,?,?,?,?)
+            kans, verwacht_pct, referentie, horizon_dagen, vraag)
+           VALUES (?,?,?,'NIETS',?,?,?,?,?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(portefeuille, symbool, datum) DO NOTHING""",
         (
             pf, b.symbool, b.datum, b.onderbouwing, b.kans,
             json.dumps(b.stappen, ensure_ascii=False), json.dumps(koppen, ensure_ascii=False),
             len(b.koppen), b.kosten_usd, b.probleem, nieuws_tot,
             datetime.now(timezone.utc).isoformat(),
-            b.kans, b.verwacht_pct, b.referentie, horizon,
+            b.kans, b.verwacht_pct, b.referentie, horizon, b.vraag,
         ),
     )
 

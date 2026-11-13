@@ -32,6 +32,21 @@ Alles daarnaast is **verkennend**: de regelstrategieën, de meetlatten SPY en BT
 het Haiku-controlepotje, `ai_enkel`, de weekrapporten. Interessant om te zien,
 maar daar trek je geen harde conclusie uit. Een weekrapport is een tussenstand.
 
+**Ook verkennend, maar vooraf vastgelegd: klopten de kansen?** Elke kans van de
+AI wordt na 14 kalenderdagen gescoord tegen wat er echt gebeurde, met de
+Brier-score (lager is beter; altijd 0,5 zeggen geeft 0,25) en een tabel per
+kansvak (onder 0,45, 0,45 tot 0,55, 0,55 of meer: hoe vaak kwam het uit?). Dat
+gebeurt **apart voor twee soorten vraag**, want het zijn verschillende vragen:
+
+* **relatief**, voor alle symbolen behalve SPY en BTC: doet het symbool het beter
+  dan zijn referentie (SPY voor aandelen en ETF's, BTC voor crypto), na kosten?
+* **absoluut**, voor SPY en BTC zelf: die zijn de referentie, en tegenover
+  zichzelf valt niets te voorspellen. Daar is de referentie kas: stijgt het meer
+  dan de kosten?
+
+Bij elke kans staat in de database welke soort vraag het was (`ai_besluiten.vraag`).
+De twee soorten worden nooit samengevoegd tot één score.
+
 **Eerlijke verwachting:** drie maanden is kort. De kans is groot dat het verschil
 aan het eind niet te onderscheiden is van toeval. Dat is dan ook een uitkomst:
 het betekent dat er geen voordeel te zien was dat groot genoeg is om te tellen.
@@ -412,8 +427,13 @@ De AI **beslist niets**. Hij geeft per symbool, elke beursdag:
 
 * een **kans** (0 tot 1) dat het symbool het de komende 14 kalenderdagen beter
   doet dan zijn referentie (SPY voor aandelen en ETF's, BTC voor crypto), na
-  ongeveer 0,3% kosten;
-* een **verwacht extra rendement** in procenten tegenover die referentie.
+  ongeveer 0,3% kosten. Voor SPY en BTC zelf is de referentie **kas**: de kans
+  dat ze meer stijgen dan die kosten;
+* een **verwacht extra rendement** in procenten tegenover die referentie (bij
+  kas: het verwachte rendement zelf).
+
+De vraag staat in elk bericht aan het model uitgeschreven. De beslisregel
+hieronder is voor beide soorten vraag dezelfde.
 
 Wat er gekocht en verkocht wordt, beslist de **code**, met regels die voor de
 start vastliggen (`config.yaml`, onder `ai.beslisregel`):
@@ -429,8 +449,9 @@ start vastliggen (`config.yaml`, onder `ai.beslisregel`):
 
 Waarom zo? In de eerste proefronde koos de oude opzet, waarin de AI zelf
 KOOP/VERKOOP/NIETS zei, alle 144 keer "niets". Zo meet je niets. Nu wordt elke
-kans bewaard, ook als er niets gebeurt, en kun je achteraf nagaan of de kansen
-klopten.
+kans bewaard, ook als er niets gebeurt, en scoort de bot hem na 14 dagen
+(`bot/ai/kalibratie.py`, op slotkoersen). Het weekrapport en het
+proefweekverslag laten de uitkomst zien, per AI-portefeuille en per soort vraag.
 
 ### Wie wat doet
 
@@ -613,6 +634,7 @@ paper-trading-bot/
 │       ├── client.py        de verbinding met de Claude-API
 │       ├── budget.py        de budgetbewaking
 │       ├── kostenprognose.py  past het in een maand?
+│       ├── kalibratie.py    klopten de kansen? (Brier-score per soort vraag)
 │       └── weekoordeel.py   de drie conclusies en het voorstel
 ├── scripts/
 │   ├── vernieuw_data.py     koersen ophalen
@@ -627,7 +649,7 @@ paper-trading-bot/
 │   ├── zet_github_secrets.py  sleutels uit .env naar GitHub Secrets
 │   ├── slank_maken.py       database klein maken voor git (door GitHub)
 │   └── meld_fout.py         foutmelding naar Telegram (door GitHub)
-└── tests/                   239 tests
+└── tests/                   254 tests
 ```
 
 ### Wanneer begint de meting

@@ -19,7 +19,8 @@ from typing import Any
 
 from bot.ai import rollen
 from bot.ai.client import Antwoord, ClaudeClient
-from bot.ai.kenmerken import tabel
+from bot.ai.kenmerken import referentie as referentie_van
+from bot.ai.kenmerken import tabel, vraagsoort
 from bot.data import nieuws as mod_nieuws
 from bot.markt import Markt
 
@@ -37,6 +38,13 @@ class Beoordeling:
     koppen: list[dict] = field(default_factory=list)
     kosten_usd: float = 0.0
     probleem: str | None = None  # waarom er geen bruikbare kans is
+    vraag: str = ""  # relatief of absoluut (zie bot/ai/kenmerken.py)
+
+    def __post_init__(self) -> None:
+        if not self.referentie:
+            self.referentie = referentie_van(self.symbool)
+        if not self.vraag:
+            self.vraag = vraagsoort(self.referentie)
 
     @property
     def bruikbaar(self) -> bool:

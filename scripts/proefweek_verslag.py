@@ -103,6 +103,11 @@ def verslag(con: sqlite3.Connection, regels_cfg: dict | None = None) -> str:
             uit.append(f"  per maand (21 beursdagen) bij: {schatting}")
         uit.append("")
 
+    from bot.ai import kalibratie
+
+    uit.append(kalibratie.als_tekst(con))
+    uit.append("")
+
     kosten = con.execute(
         "SELECT rol, model, SUM(kosten_usd) usd FROM ai_kosten GROUP BY rol, model ORDER BY usd DESC"
     ).fetchall()

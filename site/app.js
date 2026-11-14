@@ -317,7 +317,7 @@ function uitlegTeksten(m) {
     ma5: 'Het gemiddelde van de laatste ' + mr.verkoop_boven_ma + ' slotkoersen. Mean reversion verkoopt zodra de koers hierboven sluit: de dip is dan voorbij.',
     bb: 'Bollinger-banden: het 20-daags gemiddelde met daaromheen twee keer de gewone schommeling. Ze laten zien hoe ver de koers normaal beweegt. De bot gebruikt deze lijnen niet; alleen ter informatie.',
     rsi: 'RSI over ' + mr.rsi_periode + ' dagen: hoe hard de koers de laatste dagen daalde of steeg, van 0 tot 100. Onder ' + getal(mr.koop_onder, 0) + ' is een felle dip; mean reversion koopt dan, als de koers boven het ' + mr.trendfilter_ma + '-daags gemiddelde staat.',
-    ai: 'De kans die de AI die dag gaf: doet dit symbool het de komende 14 dagen beter dan zijn referentie (bij SPY en BTC: stijgt het meer dan de kosten)? Bij ' + getal(br.koop_kans, 2) + ' of meer, en een verwachting van ' + getal(br.koop_verwacht_pct, 1) + '% of meer, koopt de AI. Onder ' + getal(br.verkoop_kans_onder, 2) + ' verkoopt hij.',
+    ai: 'De kans die de AI die dag gaf: doet dit symbool het de komende 14 dagen beter dan zijn referentie (bij SPY en BTC: stijgt het meer dan de kosten)? Bij ' + getal(br.koop_kans, 2) + ' of meer, en een verwachting van ' + getal(br.koop_verwacht_pct, 1) + '% of meer, koopt de AI. Zakt de kans onder de basiskans van dit symbool (de rode stippellijn: hoe vaak het antwoord vanzelf ja is), dan verkoopt hij. Precies op de basiskans houdt hij vast.',
     trades: 'Pijltje omhoog onder de kaars: gekocht op de opening van die dag. Pijltje omlaag erboven: verkocht. Elke portefeuille heeft een eigen kleur. Klik op een pijltje (of op een trade in de lijst eronder) voor de reden.',
   };
 }
@@ -424,7 +424,10 @@ async function tekenSymbolen(p) {
         legenda.append(el('span', { class: 'chip', style: 'border:1px solid #363a45' }, el('span', { class: 'stip', style: 'background:' + kleur(pf) }), 'AI-kans ' + pf));
       }
       eerste.createPriceLine({ price: st.meta.beslisregel.koop_kans, color: '#26a69a', lineWidth: 1, lineStyle: LWC.LineStyle.Dashed, axisLabelVisible: true, title: 'koop ' + getal(st.meta.beslisregel.koop_kans, 2) });
-      eerste.createPriceLine({ price: st.meta.beslisregel.verkoop_kans_onder, color: '#ef5350', lineWidth: 1, lineStyle: LWC.LineStyle.Dotted, axisLabelVisible: true, title: 'verkoop onder ' + getal(st.meta.beslisregel.verkoop_kans_onder, 2) });
+      const bk = st.meta.basiskansen || {};
+      const basis = s.symbool === 'SPY' ? bk.spy_tegen_kas : s.symbool === 'BTC/USDT' ? bk.btc_tegen_kas : s.soort === 'crypto' ? bk.crypto_tegen_btc : bk.aandeel_tegen_spy;
+      const grens = basis === undefined || basis === null ? st.meta.beslisregel.verkoop_kans_onder : basis;
+      eerste.createPriceLine({ price: grens, color: '#ef5350', lineWidth: 1, lineStyle: LWC.LineStyle.Dotted, axisLabelVisible: true, title: 'verkoop onder basiskans ' + getal(grens, 2) });
       g.panes()[pane].setHeight(110);
     } else if (symboolStand.aan.ai) {
       legenda.append(el('span', { class: 'dim klein', text: 'Nog geen AI-kansen voor ' + s.symbool + ' in deze weergave.' }));

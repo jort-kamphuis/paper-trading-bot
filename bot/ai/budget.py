@@ -135,6 +135,15 @@ class Budget:
             (hoofd,),
         ).fetchone()
         per_nacht = float(rij["g"] or 0.0)
+        # Reken met het hoogste van het gemiddelde en de laatste vijf nachten, plus
+        # een marge: lopen de kosten op, dan komt de hoofdvraag anders toch tekort.
+        recent = self.con.execute(
+            """SELECT AVG(s) g FROM (SELECT SUM(kosten_usd) s FROM ai_besluiten WHERE portefeuille = ?
+                                      GROUP BY datum HAVING s > 0 ORDER BY datum DESC LIMIT 5)""",
+            (hoofd,),
+        ).fetchone()
+        per_nacht = max(per_nacht, float(recent["g"] or 0.0))
+        marge = 1.0 + float(cfg["ai"]["budget"].get("reserve_marge_pct", 15)) / 100.0
         nachten = 0
         dag = date.fromisoformat(datum) + timedelta(days=1)
         # Een beslisdag telt voor de maand waarin de ronde draait: de dag erna.
@@ -142,7 +151,7 @@ class Budget:
             if (dag + timedelta(days=1)).strftime("%Y-%m") == self.maand and beurs_open_volgens_kalender(cfg, dag.isoformat()):
                 nachten += 1
             dag += timedelta(days=1)
-        return per_nacht * nachten
+        return per_nacht * nachten * marge
 
     def nachtkosten(self, portefeuille: str) -> float:
         rij = self.con.execute(

@@ -1,4 +1,7 @@
-"""Bouw het dashboard: de statische site plus de resultaten als JSON. Verandert niets.
+"""Bouw het dashboard: de statische site plus de resultaten als JSON.
+
+Verandert niets aan de meting. Een oudere database krijgt bij het openen wel de
+nieuwste kolommen erbij (zoals elke ronde dat doet); de inhoud blijft gelijk.
 
 Op GitHub draait dit elke nacht na de ronde, VOOR de database klein wordt
 gemaakt (dan zijn alle koersen er nog). De map _site gaat naar GitHub Pages.

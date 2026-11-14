@@ -248,6 +248,7 @@ def denk_na(
         regels=regels,
         max_posities=pf.max_posities or 10,
         kopen_toegestaan=uit.compleet,
+        basiskansen=cfg["ai"].get("basiskansen"),
     )
     for order in keuze.orders:
         con.execute(

@@ -11,7 +11,7 @@ Regel van de meting: een lopende portefeuille wordt nooit aangepast. Daarom:
 3. Dan een eerlijk A/B-paar: twee nieuwe portefeuilles op dezelfde dag met
    hetzelfde geld. A met de huidige instellingen, B met de voorgestelde.
 4. Na 8 weken: alleen bij een betekenisvol verschil (B beter en p-waarde 0,05
-   of lager, met een blok-bootstrap) volgt een vraag om akkoord. Anders stopt
+   of lager, met de toets op blokgemiddelden) volgt een vraag om akkoord. Anders stopt
    de proef.
 5. Na /akkoord gaat B verder als NIEUWE, vaste portefeuille. Het origineel en
    config.yaml blijven ongewijzigd. A stopt (die was een kopie van het origineel).

@@ -1,14 +1,13 @@
 """De AI-analist: geeft per symbool een kans en een verwacht extra rendement.
 
 Twee soorten:
-* debat: nieuwsanalist, dan bull en bear, dan de risk manager die de kans geeft;
+* debat: nieuwsanalist, dan bull en bear, dan de voorspeller (rol 'risk') die de kans geeft;
 * enkel: een aanroep die alles zelf afweegt (test of het debat iets toevoegt).
 
 De analist beslist niets. Wat er gekocht of verkocht wordt, beslist de code
 (bot/ai/beslisregel.py) met vaste drempels. Zo meet je de kansen zelf, en niet
-een model dat bang is om iets te doen (in de eerste proefronde koos de oude
-risk manager 110 van de 110 keer "niets", terwijl de drempel van 0,6 niets
-tegenhield).
+een model dat bang is om iets te doen (in de eerste proefronde eindigden alle
+144 beslissingen op "niets", terwijl de drempel van 0,6 niets tegenhield).
 """
 
 from __future__ import annotations

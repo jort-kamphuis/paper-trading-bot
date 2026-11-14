@@ -62,8 +62,9 @@ openingskoers van de dag na de beslisdag (dan zou de bot kopen) tot de slotkoers
 14 dagen later, met dividend, en na 0,3% kosten. Vanaf het slot rekenen zou nieuws
 van na het slot, dat de AI om 00:30 UTC al ziet, laten meetellen als voorspelling.
 De maat is de Brier-score (lager is beter), naast twee vergelijkingen: altijd 0,5
-zeggen (0,25) en altijd de basiskans zeggen (hoe vaak het in het algemeen
-uitkwam). Pas onder die tweede lat weet de AI iets. Daarbij een tabel per kansvak
+zeggen (0,25) en altijd de basiskans achteraf zeggen (hoe vaak het in de
+meetperiode zelf uitkwam; dus niet het getal uit `config.yaml` dat de AI vooraf
+als anker krijgt). Pas onder die tweede lat weet de AI iets. Daarbij een tabel per kansvak
 van 0,05 (hoe vaak kwam het uit?). Kansen op opeenvolgende dagen gaan over
 overlappende periodes, dus er zijn minder onafhankelijke waarnemingen dan het
 aantal kansen doet lijken. Dit gebeurt **apart voor twee soorten vraag**, want het
@@ -81,7 +82,7 @@ De twee soorten worden nooit samengevoegd tot één score.
 Hoe de kansen worden beoordeeld, ligt ook vooraf vast:
 
 * Alleen kansen van beslisdagen van 23 november tot en met 23 februari tellen mee.
-* **Relatief:** is de Brier-score beter dan "altijd de basiskans zeggen"? Per
+* **Relatief:** is de Brier-score beter dan "altijd de basiskans achteraf zeggen"? Per
   beslisdag het gemiddelde verschil, en daarop dezelfde toets op blokgemiddelden
   als bij de hoofdvraag (eenzijdig, blokken van 10 beslisdagen). Verkennend.
 * **Absoluut** (SPY en BTC): alleen tonen, geen conclusie. Dat zijn twee kansen per
@@ -96,6 +97,11 @@ per soort belegd had. De hoofdvraag blijft de vergelijking met `gelijk_alle`.
 **Eerlijke verwachting:** drie maanden is kort. De kans is groot dat het verschil
 aan het eind niet te onderscheiden is van toeval. Dat is dan ook een uitkomst:
 het betekent dat er geen voordeel te zien was dat groot genoeg is om te tellen.
+
+**De opzet is bevroren op 14 november 2026.** Na drie reviewrondes en een
+eindcontrole verandert er niets meer aan de regels, de prompts, de drempels en de
+toets. Alleen echte fouten worden nog gerepareerd, en dat staat dan in de
+geschiedenis van de repository.
 
 **Tussenstanden zijn verkennend.** Weekrapporten en het dashboard tonen onderweg
 p-waarden met het woord "verkennend", nooit "betekenisvol". Wie elke week kijkt en
@@ -543,8 +549,14 @@ start vastliggen (`config.yaml`, onder `ai.beslisregel`):
   Bij een gelijke kans telt de verwachting gedeeld door de dagschommeling, anders
   wint altijd het beweeglijkste symbool.
 * **Hooguit 2 cryptoposities** tegelijk, net als bij mean reversion.
-* **Verkopen** als de kans onder 0,50 zakt, of na 14 kalenderdagen, tenzij het
-  symbool dan opnieuw aan de koopregel voldoet (dan begint de houdtijd opnieuw).
+* **Verkopen** als de kans **onder de basiskans van dat symbool** zakt: 0,46 voor
+  een aandeel of ETF, 0,38 voor een altcoin, 0,53 voor SPY en 0,45 voor bitcoin.
+  Precies op de basiskans is vasthouden. De basiskans is wat de AI hoort te zeggen
+  als hij niets bijzonders ziet, dus "geen mening" betekent vasthouden en niet
+  verkopen. (Met een vaste grens van 0,50 zou elk aandeel eruit gaan zodra de AI
+  geen mening meer had, telkens voor 0,3% kosten.)
+* **Ook verkopen** na 14 kalenderdagen, tenzij het symbool dan opnieuw aan de
+  koopregel voldoet (dan begint de houdtijd opnieuw).
 * **Niet kopen** in een nacht waarin niet alles beoordeeld kon worden (budget op,
   fouten, of een antwoord dat ook na één herkansing onbruikbaar bleef): dan zou de
   keuze scheef zijn.
@@ -777,7 +789,7 @@ paper-trading-bot/
 │   ├── zet_github_secrets.py  sleutels uit .env naar GitHub Secrets
 │   ├── slank_maken.py       database klein maken voor git (door GitHub)
 │   └── meld_fout.py         foutmelding naar Telegram (door GitHub)
-└── tests/                   329 tests
+└── tests/                   341 tests
 ```
 
 ### Wanneer begint de meting

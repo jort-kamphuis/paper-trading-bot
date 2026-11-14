@@ -46,6 +46,30 @@ def gemiste_beursdagen(markt: Markt, symbool: str, dag: str, kalender: str) -> i
     return teller
 
 
+def gat_lengte(markt: Markt, symbool: str, dag: str, kalender: str, tot: str | None = None) -> int:
+    """Hoe lang het aaneengesloten gat is waar 'dag' in zit: beursdagen zonder koers, voor en na.
+
+    'tot' is de laatste dag die meetelt (de laatste dag van de ronde); later telt niet.
+    """
+    if not markt.heeft(symbool):
+        return 0
+    eigen = set(markt.handelsdagen_van(symbool))
+    beurs = markt.handelsdagen_van(kalender)
+    if dag not in beurs or dag in eigen:
+        return 0
+    i = beurs.index(dag)
+    lengte = 1
+    j = i - 1
+    while j >= 0 and beurs[j] not in eigen:
+        lengte += 1
+        j -= 1
+    j = i + 1
+    while j < len(beurs) and beurs[j] not in eigen and (tot is None or beurs[j] <= tot):
+        lengte += 1
+        j += 1
+    return lengte
+
+
 def _verdachte_sprong(markt: Markt, symbool: str, dag: str) -> str | None:
     """Een aandeel dat in een dag halveert of verdubbelt, zonder splitsing: dat klopt niet.
 
@@ -90,15 +114,12 @@ def controleer(markt: Markt, cfg: dict, dagen: list[str]) -> list[str]:
     beursdagen = set(markt.handelsdagen_van(kalender))
 
     verdwenen_na = verdwenen_grens(cfg)
-    # Een aandeel is verdwenen als het tot en met de LAATSTE dag van de lijst al
-    # zoveel beursdagen achter elkaar geen koers heeft. Dan blokkeert geen van die
-    # dagen meer. (Per dag tellen werkt niet: de eerste twee gemiste dagen bleven dan
-    # altijd een probleem, waardoor de derde nooit werd bereikt; review 3.)
+    # Een dag zonder koers blokkeert niet als hij in een aaneengesloten gat van
+    # zoveel beursdagen zit: dan is het aandeel 'verdwenen' en sluit de motor de
+    # positie. Het hele gat telt, niet alleen tot de dag zelf of tot de laatste dag:
+    # anders bleven de eerste gemiste dagen een probleem (review 3), of blokkeerde
+    # een al verwerkte dag opnieuw zodra het aandeel terugkwam (eindreview).
     laatste = max(dagen)
-    verdwenen = {
-        s for s in aandelen
-        if markt.heeft(s) and gemiste_beursdagen(markt, s, laatste, kalender) >= verdwenen_na
-    }
     for dag in dagen:
         if beurs_open_volgens_kalender(cfg, dag) and dag not in beursdagen:
             problemen.append(
@@ -107,7 +128,7 @@ def controleer(markt: Markt, cfg: dict, dagen: list[str]) -> list[str]:
         if dag in beursdagen:
             for symbool in aandelen:
                 if markt.heeft(symbool) and markt.bar(symbool, dag) is None:
-                    if symbool in verdwenen and dag > markt.tot_en_met(symbool, laatste).index[-1]:
+                    if gat_lengte(markt, symbool, dag, kalender, tot=laatste) >= verdwenen_na:
                         continue  # verdwenen: de motor sluit de positie, de handel gaat door
                     problemen.append(f"{symbool}: geen koers op {dag}, terwijl {kalender} die dag wel handelde")
                     continue

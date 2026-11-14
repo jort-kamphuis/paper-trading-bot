@@ -4,7 +4,7 @@ Opzet (naar het idee van TradingAgents, aangepast na de review):
 * De kengetallen rekent de code zelf uit (bot/ai/kenmerken.py).
 * De nieuwsanalist kijkt naar risico's en gebeurtenissen die eraan komen.
 * Bull en bear krijgen de tabel, de ruwe koppen en de nieuwssamenvatting.
-* De risk manager geeft een KANS en een VERWACHT EXTRA RENDEMENT. Hij beslist
+* De voorspeller (rol 'risk') geeft een KANS en een VERWACHT EXTRA RENDEMENT. Hij beslist
   niet; dat doet de code met vaste regels (config.yaml, ai.beslisregel).
 * ai_enkel doet alles in een aanroep: dezelfde gegevens, dezelfde uitkomst.
 

@@ -132,7 +132,7 @@ strategieen:
 ai:
   actief: true
 
-  # De AI-portefeuilles. 'soort': debat (nieuws, bull, bear, risk manager) of
+  # De AI-portefeuilles. 'soort': debat (nieuws, bull, bear en de voorspeller, rol 'risk') of
   # enkel (een aanroep die beide kanten afweegt; test of het debat iets
   # toevoegt). 'model' zet alle rollen op dat ene model.
   portefeuilles:
@@ -189,7 +189,10 @@ ai:
     horizon_kalenderdagen: 14   # ongeveer 10 beursdagen
     koop_kans: 0.55             # kopen bij een kans van 0,55 of meer ...
     koop_verwacht_pct: 0.5      # ... en een verwacht extra rendement van 0,5% of meer
-    verkoop_kans_onder: 0.50    # verkopen als de kans onder 0,50 zakt
+    # Verkopen als de kans ONDER de basiskans van dat symbool zakt (zie basiskansen
+    # hierboven); precies op de basiskans is vasthouden. Het getal hieronder geldt
+    # alleen als er voor een symbool geen basiskans bekend is.
+    verkoop_kans_onder: 0.50
     houdtijd_kalenderdagen: 14  # na 14 dagen verkopen, tenzij opnieuw bevestigd
     max_crypto: 2               # hooguit 2 cryptoposities tegelijk (zoals mean reversion)
 
@@ -205,6 +208,9 @@ ai:
     # opwaarderen uit: het tegoed zelf is de noodrem. Is het op, dan meldt de bot dat.
     max_usd_per_maand: 35.00
     waarschuw_onder_usd: 5.00
+    # De reserve voor de portefeuille van de hoofdvraag (zie bot/ai/budget.py) krijgt
+    # deze marge, voor het geval de kosten per nacht oplopen.
+    reserve_marge_pct: 15
 
   nieuws:
     max_koppen: 8

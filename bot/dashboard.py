@@ -518,6 +518,7 @@ def exporteer(
         "label": label,
         "meting": {"start": str(m.get("start", "")), "einde": str(m.get("einde", ""))},
         "beslisregel": {k: basis["ai"]["beslisregel"][k] for k in ("koop_kans", "koop_verwacht_pct", "verkoop_kans_onder")},
+        "basiskansen": dict(basis["ai"].get("basiskansen") or {}),
         "mean_reversion": {k: basis["strategieen"]["mean_reversion"][k] for k in ("rsi_periode", "koop_onder", "trendfilter_ma", "verkoop_boven_ma")},
         "trend": {k: basis["strategieen"]["trend"][k] for k in ("snelle_ma", "langzame_ma")},
         "weergaven": weergaven,

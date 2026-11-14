@@ -3,7 +3,12 @@
 Vastgelegd voor de start van de meting (config.yaml, ai.beslisregel):
 
 Verkopen
-* als de kans onder 0,50 zakt;
+* als de kans ONDER de basiskans van dat symbool zakt (aandeel of ETF 0,46, altcoin
+  0,38, SPY 0,53, bitcoin 0,45; config.yaml, ai.basiskansen). Precies op de
+  basiskans is vasthouden. De basiskans is wat het model hoort te zeggen als het
+  niets bijzonders ziet: 'geen mening' betekent dus vasthouden, niet verkopen
+  (eindreview november 2026: met een vaste grens van 0,50 ging elk aandeel eruit
+  zodra het model geen mening meer had, telkens voor 0,3% kosten);
 * of als de houdtijd (14 kalenderdagen sinds de aankoop of de laatste
   herbevestiging) om is, tenzij het symbool opnieuw aan de koopregel voldoet.
   Dan telt dat als herbevestiging en begint de houdtijd opnieuw;
@@ -33,6 +38,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from bot.ai.analist import Beoordeling
+from bot.ai.kenmerken import basiskans as basiskans_van
 from bot.config import is_crypto
 from bot.portefeuille import Positie
 from bot.strategieen.basis import Order
@@ -62,6 +68,23 @@ def _verwacht_per_schommeling(b: Beoordeling) -> float:
     return b.verwacht_pct / (schommeling if schommeling > 0 else 1.0)
 
 
+def verkoopgrens(b: Beoordeling, regels: dict, basiskansen: dict | None) -> float:
+    """Onder welke kans een positie in dit symbool wordt verkocht: zijn basiskans.
+
+    Eerst de basiskans die het model zelf te zien kreeg (opgeslagen bij de
+    beoordeling), anders die uit de instellingen. Is er geen basiskans bekend, dan de
+    vaste grens uit de beslisregel (verkoop_kans_onder).
+    """
+    gezien = ((b.stappen or {}).get("kenmerken") or {}).get("basiskans")
+    try:
+        if gezien is not None:
+            return float(gezien)
+    except (TypeError, ValueError):
+        pass
+    uit_config = basiskans_van(b.symbool, basiskansen)
+    return uit_config if uit_config is not None else float(regels["verkoop_kans_onder"])
+
+
 def voldoet_aan_koopregel(b: Beoordeling | None, regels: dict) -> bool:
     return (
         b is not None and b.bruikbaar
@@ -79,10 +102,10 @@ def kies(
     regels: dict,
     max_posities: int,
     kopen_toegestaan: bool = True,
+    basiskansen: dict | None = None,
 ) -> Uitkomst:
     uit = Uitkomst()
     houdtijd = int(regels["houdtijd_kalenderdagen"])
-    verkoop_onder = float(regels["verkoop_kans_onder"])
 
     # ---- verkopen ----
     verkocht: set[str] = set()
@@ -95,8 +118,9 @@ def kies(
         if b is None or not b.bruikbaar:
             if om:
                 reden = f"houdtijd van {houdtijd} dagen om, en geen nieuwe beoordeling"
-        elif b.kans < verkoop_onder:
-            reden = f"kans gezakt naar {getal(b.kans, 2)} (onder {getal(verkoop_onder, 2)}). {b.onderbouwing}"
+        elif b.kans < verkoopgrens(b, regels, basiskansen):
+            grens = verkoopgrens(b, regels, basiskansen)
+            reden = f"kans gezakt naar {getal(b.kans, 2)} (onder de basiskans van {getal(grens, 2)}). {b.onderbouwing}"
         elif om:
             if voldoet_aan_koopregel(b, regels):
                 uit.herbevestigd.append(symbool)

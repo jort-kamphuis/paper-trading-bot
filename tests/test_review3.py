@@ -199,7 +199,7 @@ def test_reserve_voor_de_hoofdvraag(con, cfg_ai):
     assert budget.nachtkosten("ai_enkel") == pytest.approx(0.40)
     # Beslisdagen 3 t/m 30 december tellen nog voor december (de ronde draait de dag erna);
     # 31 december valt in de ronde van 1 januari. Kerst (25 dec) is een feestdag.
-    assert budget.reserve_voor("ai_analist", "2026-12-02", cfg) == pytest.approx(1.00 * 19)
+    assert budget.reserve_voor("ai_analist", "2026-12-02", cfg) == pytest.approx(1.00 * 19 * 1.15), "met 15% marge"
 
 
 def test_de_zwaarste_maand_is_december():
@@ -301,3 +301,106 @@ def test_workflow_altijd_main_en_melding_bij_afbreken():
     tekst = (PROJECT / ".github" / "workflows" / "dagelijks.yml").read_text(encoding="utf-8")
     assert "ref: main" in tekst
     assert "if: ${{ failure() || cancelled() }}" in tekst
+
+
+# ------------------------------------------------- eindreview (14 november)
+
+
+def test_verdwenen_aandeel_dat_terugkomt_blokkeert_niet_alsnog():
+    """Na 3 beursdagen zonder koers komt het aandeel terug; de al verwerkte dagen in het gat blokkeren niet."""
+    dagen = werkdagen(10, start="2026-11-02")
+    ko = maak_df([1.0] * 7, dagen[:3] + dagen[6:])  # dag 4, 5 en 6 missen, daarna weer koersen
+    markt = Markt({"SPY": maak_df([1.0] * 10, dagen), "KO": ko})
+    cfg = _cfg(["KO"])
+    assert volledigheid.gat_lengte(markt, "KO", dagen[4], "SPY") == 3
+    # De nachtloop controleert de laatst verwerkte dag (in het gat) elke nacht opnieuw.
+    for einde in (7, 8, 10):
+        assert volledigheid.controleer(markt, cfg, dagen[5:einde]) == [], f"t/m dag {einde}"
+
+
+def test_een_kort_gat_blijft_wel_blokkeren():
+    dagen = werkdagen(10, start="2026-11-02")
+    ko = maak_df([1.0] * 8, dagen[:3] + dagen[5:])  # twee dagen missen
+    markt = Markt({"SPY": maak_df([1.0] * 10, dagen), "KO": ko})
+    assert volledigheid.gat_lengte(markt, "KO", dagen[3], "SPY") == 2
+    assert len(volledigheid.controleer(markt, _cfg(["KO"]), dagen[3:8])) == 2
+
+
+def test_reserve_rekent_met_de_recente_nachten_als_die_duurder_zijn(con, cfg_ai):
+    cfg = dict(cfg_ai)
+    cfg["beurskalender"] = ECHT["beurskalender"]
+    for i, d in enumerate(werkdagen(10, start="2026-12-01")):
+        _nacht(con, "ai_analist", d, 1.00 if i < 5 else 2.00)  # de laatste vijf nachten zijn duurder
+    con.commit()
+    budget = Budget(con, cfg, vandaag="2026-12-15")
+    # Beslisdagen 15 t/m 30 december, zonder kerst: 15-18 (4), 21-24 (4), 28-30 (3) = 11.
+    assert budget.reserve_voor("ai_analist", "2026-12-14", cfg) == pytest.approx(2.00 * 11 * 1.15)
+
+
+# ------------------------------- verkopen onder de basiskans (bevroren op 14 november)
+
+
+def _houd(symbool):
+    return {symbool: Positie(symbool, 1.0, 100.0, "2026-11-20", koopprijs=100.0)}
+
+
+@pytest.mark.parametrize("symbool, ref, basis", [
+    ("AAPL", "SPY", 0.46), ("QQQ", "SPY", 0.46), ("ETH/USDT", "BTC/USDT", 0.38),
+    ("SPY", "kas", 0.53), ("BTC/USDT", "kas", 0.45),
+])
+def test_verkopen_alleen_onder_de_basiskans_van_het_symbool(symbool, ref, basis):
+    kansen = ECHT["ai"]["basiskansen"]
+
+    def uitkomst(kans):
+        b = {symbool: Beoordeling(symbool, "2026-11-23", ref, kans=kans, verwacht_pct=0.0)}
+        return beslisregel.kies(b, _houd(symbool), set(), set(), "2026-11-23", REGELS, 10, basiskansen=kansen)
+
+    assert uitkomst(basis).orders == [], "precies op de basiskans is vasthouden"
+    assert uitkomst(basis + 0.01).orders == []
+    onder = uitkomst(basis - 0.01)
+    assert [(o.symbool, o.actie) for o in onder.orders] == [(symbool, "VERKOOP")]
+    assert "onder de basiskans van" in onder.orders[0].reden
+
+
+def test_geen_mening_is_vasthouden_niet_verkopen():
+    """Het model zegt bij twijfel de basiskans (0,46 voor een aandeel): dan niet verkopen, ook al is dat onder 0,50."""
+    b = {"AAPL": Beoordeling("AAPL", "2026-11-23", "SPY", kans=0.46, verwacht_pct=0.0,
+                             stappen={"kenmerken": {"basiskans": 0.46}})}
+    u = beslisregel.kies(b, _houd("AAPL"), set(), set(), "2026-11-23", REGELS, 10)
+    assert u.orders == []
+
+
+def test_de_basiskans_die_het_model_zag_gaat_voor():
+    """De grens is de basiskans uit de opgeslagen beoordeling; die hoort bij de kans die het model gaf."""
+    b = Beoordeling("AAPL", "2026-11-23", "SPY", kans=0.47, verwacht_pct=0.0,
+                    stappen={"kenmerken": {"basiskans": 0.50}})
+    assert beslisregel.verkoopgrens(b, REGELS, ECHT["ai"]["basiskansen"]) == 0.50
+    zonder = Beoordeling("AAPL", "2026-11-23", "SPY", kans=0.47, verwacht_pct=0.0)
+    assert beslisregel.verkoopgrens(zonder, REGELS, ECHT["ai"]["basiskansen"]) == 0.46
+    assert beslisregel.verkoopgrens(zonder, REGELS, None) == 0.50, "zonder basiskans de vaste grens"
+
+
+def test_koopgrens_blijft_055():
+    assert REGELS["koop_kans"] == 0.55 and REGELS["koop_verwacht_pct"] == 0.5
+    b = {"AAPL": Beoordeling("AAPL", "2026-11-23", "SPY", kans=0.54, verwacht_pct=2.0)}
+    assert beslisregel.kies(b, {}, set(), set(), "2026-11-23", REGELS, 10,
+                            basiskansen=ECHT["ai"]["basiskansen"]).orders == []
+
+
+def test_in_de_ronde_wordt_een_positie_op_de_basiskans_vastgehouden(con, cfg_ai):
+    markt, datum = _markt()
+    pf = nieuwe_portefeuille("ai_analist", "ai_analist", INSTELLINGEN, gestart_op="2025-01-01")
+    pf.koop("AAA", datum, datum, 100.0, "USD", 1.10)
+    pf.bewaar(con)
+    con.commit()
+    antwoorden = json.loads(json.dumps(GOED))
+    antwoorden["risk"].update(kans=0.46, verwacht_extra_rendement_pct=0.0)
+    client = NepClient(Budget(con, cfg_ai, vandaag=datum), antwoorden)
+    uit = denk_na(con, cfg_ai, client, markt, "ai_analist", datum, ["AAA"], stil=True)
+    assert uit.orders == [], "kans 0,46 = de basiskans van een aandeel: vasthouden"
+    antwoorden["risk"]["kans"] = 0.45
+    con.execute("DELETE FROM ai_besluiten")
+    con.commit()
+    uit = denk_na(con, cfg_ai, NepClient(Budget(con, cfg_ai, vandaag=datum), antwoorden), markt,
+                  "ai_analist", datum, ["AAA"], stil=True)
+    assert [(o.symbool, o.actie) for o in uit.orders] == [("AAA", "VERKOOP")]

@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bot import config as conf
 from bot import database, modus
+from bot.ai import kenmerken
 from bot.ai.kostenprognose import BEURSDAGEN_PER_MAAND, GEEN_KOERS
 from bot.tekst import getal
 
@@ -38,14 +39,14 @@ def verslag(con: sqlite3.Connection, regels_cfg: dict | None = None) -> str:
     regels_cfg = regels_cfg or conf.laad()["ai"]["beslisregel"]
     koop_kans = float(regels_cfg["koop_kans"])
     koop_verwacht = float(regels_cfg["koop_verwacht_pct"])
-    verkoop_onder = float(regels_cfg["verkoop_kans_onder"])
+    basiskansen = conf.laad()["ai"].get("basiskansen")
 
     uit: list[str] = ["Proefweek: wat deed de AI?", ""]
     rondes = con.execute("SELECT COUNT(DISTINCT datum) n FROM ai_besluiten").fetchone()["n"]
     uit.append(f"Rondes met AI-beoordelingen: {rondes}")
     uit.append(
         f"Drempels: kopen bij kans {getal(koop_kans, 2)} of meer en verwacht "
-        f"{getal(koop_verwacht, 1)}% of meer; verkopen onder {getal(verkoop_onder, 2)}."
+        f"{getal(koop_verwacht, 1)}% of meer; verkopen onder de basiskans van het symbool."
     )
     uit.append("")
 
@@ -55,7 +56,7 @@ def verslag(con: sqlite3.Connection, regels_cfg: dict | None = None) -> str:
     ]
     for pf in portefeuilles:
         rijen = con.execute(
-            "SELECT actie, kans, verwacht_pct, overgeslagen, kosten_usd FROM ai_besluiten WHERE portefeuille = ?",
+            "SELECT symbool, actie, kans, verwacht_pct, overgeslagen, kosten_usd FROM ai_besluiten WHERE portefeuille = ?",
             (pf,),
         ).fetchall()
         beoordeeld = [r for r in rijen if (r["overgeslagen"] or "") != GEEN_KOERS]
@@ -83,7 +84,7 @@ def verslag(con: sqlite3.Connection, regels_cfg: dict | None = None) -> str:
             verwacht = [float(r["verwacht_pct"]) for r in bruikbaar]
             beide = sum(1 for r in bruikbaar if r["kans"] >= koop_kans and r["verwacht_pct"] >= koop_verwacht)
             alleen_kans = sum(1 for k in kansen if k >= koop_kans)
-            onder = sum(1 for k in kansen if k < verkoop_onder)
+            onder = sum(1 for r in bruikbaar if r["kans"] < (kenmerken.basiskans(r["symbool"], basiskansen) or 0.5))
             uit.append(
                 f"  kans: mediaan {getal(_mediaan(kansen), 2)}, laagste {getal(min(kansen), 2)}, "
                 f"hoogste {getal(max(kansen), 2)}"
@@ -94,7 +95,7 @@ def verslag(con: sqlite3.Connection, regels_cfg: dict | None = None) -> str:
             )
             uit.append(
                 f"  haalt beide koopdrempels: {beide} van {len(bruikbaar)} "
-                f"(alleen de kans: {alleen_kans}); kans onder {getal(verkoop_onder, 2)}: {onder}"
+                f"(alleen de kans: {alleen_kans}); kans onder de eigen basiskans: {onder}"
             )
         if per_symbool_dag:
             schatting = ", ".join(

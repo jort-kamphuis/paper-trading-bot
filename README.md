@@ -789,7 +789,7 @@ paper-trading-bot/
 │   ├── zet_github_secrets.py  sleutels uit .env naar GitHub Secrets
 │   ├── slank_maken.py       database klein maken voor git (door GitHub)
 │   └── meld_fout.py         foutmelding naar Telegram (door GitHub)
-└── tests/                   341 tests
+└── tests/                   370 tests
 ```
 
 ### Wanneer begint de meting

@@ -75,10 +75,53 @@ watchlist:
     - DOGE/USDT
     - LTC/USDT
 
-# Welke symbolen de AI volgt: 'alles' (de 46 hierboven) of een eigen lijst.
-# Wordt vastgezet na twee proefnachten met de nieuwe code, op basis van de
-# gemeten kosten, en daarna tijdens de meting niet meer veranderd.
-ai_watchlist: alles
+# Welke symbolen de AI volgt: 30 van de 46 hierboven. Vastgelegd voor de start;
+# tijdens de meting verandert de lijst niet. De keuze is gemaakt op spreiding, niet
+# op wat het in de proefweek goed deed:
+#   20 aandelen over alle sectoren (technologie en chips 5, internet en media 3,
+#   winkels en auto's 3, dagelijkse boodschappen 3, banken en betalen 2,
+#   gezondheid 3, energie 1), waarvan 3 niet-Amerikaans (ASML, TSM, NVO);
+#   6 indexfondsen die elk iets anders volgen (grote en kleine Amerikaanse
+#   bedrijven, ontwikkelde landen, opkomende landen, goud, energie). QQQ en XLF
+#   vallen af: die overlappen sterk met de technologie- en bankaandelen in de lijst;
+#   4 van de 8 cryptomunten: BTC en ETH, plus SOL en XRP. Meer heeft weinig zin:
+#   de AI mag hooguit 2 cryptoposities hebben en cryptomunten bewegen sterk samen.
+#   SOL en XRP in plaats van BNB, ADA, DOGE of LTC is een keuze vooraf, niet op
+#   resultaten.
+# De regelstrategieën volgen nog steeds alle 46. Ze draaien ook op deze lijst
+# (momentum_ai, enzovoort), zodat de AI met regels op dezelfde symbolen te
+# vergelijken is. De meetlat van de AI is gelijk_ai: deze 30, gelijk verdeeld.
+ai_watchlist:
+  - AAPL
+  - MSFT
+  - NVDA
+  - ASML
+  - TSM
+  - GOOGL
+  - META
+  - NFLX
+  - AMZN
+  - TSLA
+  - HD
+  - WMT
+  - KO
+  - PG
+  - JPM
+  - V
+  - UNH
+  - JNJ
+  - NVO
+  - XOM
+  - SPY
+  - IWM
+  - VEA
+  - EEM
+  - GLD
+  - XLE
+  - BTC/USDT
+  - ETH/USDT
+  - SOL/USDT
+  - XRP/USDT
 
 crypto:
   # Beurzen worden in deze volgorde geprobeerd. Alleen publieke koersdata, nooit
@@ -139,6 +182,18 @@ ai:
     - {naam: ai_analist, soort: debat}
     - {naam: ai_controle_haiku, soort: debat, model: claude-haiku-5-5}
     - {naam: ai_enkel, soort: enkel}
+
+  # Afgeleide portefeuilles: ze handelen op de kansen van de portefeuilles hierboven
+  # en roepen de API zelf niet aan (bot/ai/afgeleid.py). Geen extra kosten.
+  #   rangorde:           altijd de 10 met de grootste voorsprong (kans min basiskans),
+  #                       ook bij een voorsprong van nul of minder. DE HOOFDVRAAG.
+  #   rangorde_omgekeerd: het spiegelbeeld, de 10 met de kleinste voorsprong (controle).
+  #   consensus:          alleen kopen wat alle bronnen boven de basiskans zetten.
+  # Alle drie: 10% per positie, hooguit 2 crypto, wisselen alleen na de houdtijd.
+  afgeleid:
+    - {naam: ai_rangorde,           soort: rangorde,           bron: ai_analist}
+    - {naam: ai_rangorde_omgekeerd, soort: rangorde_omgekeerd, bron: ai_analist}
+    - {naam: ai_consensus,          soort: consensus,          bronnen: [ai_analist, ai_enkel, ai_controle_haiku]}
 
   # Welk model elke rol gebruikt. De kengetallen rekent de code zelf uit; daar
   # is geen model meer voor nodig.
@@ -274,9 +329,28 @@ backtest:
 # het dashboard en de rapporten; dit verandert niets aan wat een portefeuille doet.
 meting:
   start: "2026-11-23"
-  einde: "2027-02-23"
-  ai_portefeuille: ai_analist        # de portefeuille van de hoofdvraag
-  proef_ai_portefeuille: proef_ai_mix  # zijn tegenhanger in de proefweek
+  einde: "2027-11-23"                 # 12 maanden; daarna beoordeelt de AI niets meer
+  ai_portefeuille: ai_rangorde         # de portefeuille van de hoofdvraag
+  ai_bron: ai_analist                  # die de kansen levert (en dus API-geld kost)
+  proef_ai_portefeuille: proef_ai_rangorde  # de tegenhangers in de proefweek
+  proef_ai_bron: proef_ai_mix
+  # Vier vaste meetmomenten, met per moment een strengere grens voor de p-waarde
+  # (O'Brien-Fleming, eenzijdig, samen ongeveer 5% kans op vals alarm). Het eerste
+  # moment waarop de grens gehaald wordt, beslist. Zie bot/meting.py en de README.
+  meetmomenten:
+    - {datum: "2027-02-23", grens_p: 0.00026}
+    - {datum: "2027-05-23", grens_p: 0.0071}
+    - {datum: "2027-08-23", grens_p: 0.0226}
+    - {datum: "2027-11-23", grens_p: 0.0415}
+  # De credits worden per kwartaal gekocht. Zoveel dagen voor elk meetmoment
+  # (behalve het laatste) herinnert de bot daaraan in Telegram, met het bedrag
+  # voor het volgende kwartaal uit de gemeten kosten, plus deze marge.
+  credits_herinnering_dagen: 14
+  credits_marge_pct: 20
+  # Alle andere portefeuilles zijn verkennend: een winnaar telt alleen bij een
+  # p-waarde onder dit getal gedeeld door het aantal verkennende portefeuilles, in
+  # een afgeronde periode, EN nog een keer in een latere periode.
+  verkennend_p: 0.05
 
 dashboard:
   # Gepubliceerd via GitHub Pages; de link staat onder elk Telegram-bericht.

@@ -109,6 +109,12 @@ def bouw_motor(
                 ai_lijst,
                 gestart_op=begin,
             )
+        # Afgeleide portefeuilles: ze handelen op de kansen hierboven, zonder de API
+        # (bot/ai/afgeleid.py). In de motor zijn het gewone portefeuilles.
+        from bot.ai.afgeleid import afgeleide_portefeuilles
+
+        for p in afgeleide_portefeuilles(cfg):
+            motor.voeg_toe(AIStrategie(p["naam"], soort=p["soort"]), ai_lijst, gestart_op=begin)
 
     # ---- challengers ----
     if met_challengers:

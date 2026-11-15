@@ -284,7 +284,7 @@ def test_toets_tegen_de_basiskans():
 
 
 def test_venster_alleen_in_de_echte_meting():
-    assert kalibratie.venster({"modus": "echt", "meting": ECHT["meting"]}) == ("2026-11-23", "2027-02-23")
+    assert kalibratie.venster({"modus": "echt", "meting": ECHT["meting"]}) == ("2026-11-23", "2027-11-23")
     assert kalibratie.venster({"modus": "proefweek", "meting": ECHT["meting"]}) == (None, None)
 
 

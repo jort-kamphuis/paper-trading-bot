@@ -68,7 +68,7 @@ def cfg_nacht(cfg_min):
 
 def _markt_tot(laatste: str):
     """Koersen voor AAA, BBB en SPY op 140 werkdagen, tot en met de beslisdag."""
-    dagen = [d for d in werkdagen(700, start="2025-01-01") if d <= laatste][-140:]
+    dagen = [d for d in werkdagen(800, start="2025-01-01") if d <= laatste][-140:]
     assert dagen[-1] == laatste, "de beslisdag moet een werkdag zijn"
     koersen = {s: [100.0 + i * 0.1 for i in range(len(dagen))] for s in ("AAA", "BBB", "SPY")}
     return maak_markt(koersen, dagen), dagen
@@ -218,7 +218,7 @@ def test_de_reserve_geldt_alleen_in_de_echte_meting(con, cfg_nacht, dagelijks, m
 # ------------------------------------------- de nachtloop: na de einddatum
 
 
-def _februarinacht(con, monkeypatch, vandaag: str, beslisdag: str):
+def _eindnacht(con, monkeypatch, vandaag: str, beslisdag: str):
     markt, dagen = _markt_tot(beslisdag)
     _portefeuilles(con, dagen, met_posities="ai_analist")
     _zet_vandaag(monkeypatch, vandaag)
@@ -226,8 +226,8 @@ def _februarinacht(con, monkeypatch, vandaag: str, beslisdag: str):
 
 
 def test_op_de_einddatum_beoordeelt_de_ai_nog(con, cfg_nacht, dagelijks, monkeypatch):
-    assert str(cfg_nacht["meting"]["einde"]) == "2027-02-23"
-    markt, datum = _februarinacht(con, monkeypatch, vandaag="2027-02-24", beslisdag="2027-02-23")
+    assert str(cfg_nacht["meting"]["einde"]) == "2027-11-23"
+    markt, datum = _eindnacht(con, monkeypatch, vandaag="2027-11-24", beslisdag="2027-11-23")
     clients = _nachtloop_met_nepclient(monkeypatch)
 
     regels = dagelijks._ai_ronde(con, cfg_nacht, markt, datum, nieuw_nieuws=False, ingehaald=1)
@@ -239,12 +239,12 @@ def test_op_de_einddatum_beoordeelt_de_ai_nog(con, cfg_nacht, dagelijks, monkeyp
 
 def test_na_de_einddatum_beoordeelt_de_ai_niets_en_lopen_de_posities_af(con, cfg_nacht, dagelijks, monkeypatch):
     """Een dag later: geen aanroep, geen kosten, geen aankopen. Wat de houdtijd uit heeft, wordt verkocht."""
-    markt, datum = _februarinacht(con, monkeypatch, vandaag="2027-02-25", beslisdag="2027-02-24")
+    markt, datum = _eindnacht(con, monkeypatch, vandaag="2027-11-25", beslisdag="2027-11-24")
     clients = _nachtloop_met_nepclient(monkeypatch)
 
     regels = dagelijks._ai_ronde(con, cfg_nacht, markt, datum, nieuw_nieuws=False, ingehaald=1)
 
-    assert "AI gestopt: de meting liep tot en met 2027-02-23." in regels
+    assert "AI gestopt: de meting liep tot en met 2027-11-23." in regels
     assert clients[0].aanroepen == []
     assert con.execute("SELECT COUNT(*) n FROM ai_kosten").fetchone()["n"] == 0
     assert _beoordeeld(con, datum) == {}
@@ -254,7 +254,7 @@ def test_na_de_einddatum_beoordeelt_de_ai_niets_en_lopen_de_posities_af(con, cfg
 
 
 def test_in_de_proefweek_stopt_de_ai_niet_op_de_einddatum(con, cfg_nacht, dagelijks, monkeypatch):
-    markt, datum = _februarinacht(con, monkeypatch, vandaag="2027-02-25", beslisdag="2027-02-24")
+    markt, datum = _eindnacht(con, monkeypatch, vandaag="2027-11-25", beslisdag="2027-11-24")
     _nachtloop_met_nepclient(monkeypatch)
     cfg_nacht["modus"] = "proefweek"
 

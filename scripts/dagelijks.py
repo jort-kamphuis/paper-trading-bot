@@ -166,7 +166,8 @@ def _ai_ronde(
     client = maak_client(con, cfg)
     kosten_vandaag = 0.0
     meting = cfg.get("meting") or {}
-    hoofd = meting.get("ai_portefeuille", "ai_analist")
+    # De portefeuille die de kansen voor de hoofdvraag levert (en dus API-geld kost).
+    hoofd = meting.get("proef_ai_bron" if cfg.get("modus") == "proefweek" else "ai_bron", "ai_analist")
     echt = cfg.get("modus") == "echt"
     # Na de einddatum beoordeelt de AI niets meer (dat kost alleen nog geld en telt
     # niet mee). Posities lopen af: de code verkoopt ze na hun houdtijd.
@@ -213,6 +214,19 @@ def _ai_ronde(
         elif uitkomst.onbruikbaar:
             bericht.append(f"{naam}: {len(uitkomst.onbruikbaar)} symbolen zonder bruikbare kans, "
                            f"dus vannacht geen aankopen ({', '.join(uitkomst.onbruikbaar[:5])})")
+
+    # ---- de afgeleide portefeuilles: zelfde kansen, geen API ----
+    from bot.ai import afgeleid
+
+    for a in afgeleid.afgeleide_portefeuilles(cfg):
+        keuze = afgeleid.werk_bij(con, cfg, markt, a, datum, symbolen, afbouwen=voorbij)
+        kopen = sum(1 for o in keuze.orders if o.actie == "KOOP")
+        verkopen = sum(1 for o in keuze.orders if o.actie == "VERKOOP")
+        if keuze.overgeslagen:
+            print(f"\n  {a['naam']} ({a['soort']}): {keuze.overgeslagen}")
+        else:
+            print(f"\n  {a['naam']} ({a['soort']}, kansen van {', '.join(a['bronnen'])}): "
+                  f"{kopen} kopen, {verkopen} verkopen, {len(keuze.herbevestigd)} herbevestigd, geen API-kosten")
 
     print()
     print(budget.samenvatting())
@@ -422,6 +436,14 @@ def ronde(args) -> tuple[int, str | None]:
             args.berichten.append(tekst)
             database.zet_instelling(con, sleutel, "verstuurd")
             print(f"\nHerinnering klaargezet: {tekst[:80]}...")
+
+    # ---- 0e. credits voor het volgende kwartaal (echte meting) ----
+    from bot import meting as _meting
+
+    kwartaal = _meting.credits_herinnering(con, cfg, vandaag_utc)
+    if kwartaal:
+        args.berichten.append(kwartaal)
+        print(f"\nHerinnering klaargezet: {kwartaal[:80]}...")
 
     # ---- 1. koersen ----
     if args.geen_data:

@@ -35,11 +35,13 @@ proefweek:
   herinnering:
     datum: "2026-11-18"
     tekst: >-
-      Herinnering: koop voor 20 november de credits voor de hele meting, in een
-      keer, in de Anthropic-console, met automatisch opwaarderen uit. Je gratis
-      tegoed verloopt op 20 november om 00:00 UTC. De proefrondes van 20 en 21
-      november (zonder Opus) gebruiken die credits ook al; reken daar een paar
-      dollar extra voor. Het bedrag voor de meting zelf staat hieronder.
+      Herinnering: koop voor 20 november de credits voor het eerste kwartaal
+      in de Anthropic-console, met automatisch opwaarderen uit. Je gratis tegoed
+      verloopt op 20 november om 00:00 UTC. De meting duurt 12 maanden en je
+      koopt per kwartaal, niet het hele jaar in een keer; het bedrag per kwartaal
+      staat hieronder. Twee weken voor elk meetmoment herinnert de bot je aan
+      het volgende kwartaal. De proefrondes van 20 en 21 november (zonder Opus)
+      gebruiken deze credits ook al; reken daar een paar dollar extra voor.
     # De marge bovenop het berekende bedrag, in procenten.
     marge_pct: 20
 
@@ -49,9 +51,8 @@ proefweek:
     correctie_usd: 0.2339
     correctie_reden: "proef op een kopie van de database riep op 2026-11-13 de API aan"
 
-# Alle symbolen voor de AI. Na twee proefnachten met deze code kies je, op basis
-# van de gemeten kosten, de lijst voor de echte meting (config.yaml).
-ai_watchlist: alles
+# De AI volgt in de proefweek dezelfde 30 symbolen als in de echte meting
+# (config.yaml), zodat de proefnachten precies de echte opzet testen.
 
 ai:
   # Vier AI-portefeuilles. 'model' zet alle rollen op dat ene model; zonder
@@ -62,6 +63,12 @@ ai:
     - {naam: proef_ai_mix,   soort: debat}                            # zoals ai_analist
     - {naam: proef_ai_haiku, soort: debat, model: claude-haiku-5-5}   # zoals ai_controle_haiku
     - {naam: proef_ai_enkel, soort: enkel}                            # zoals ai_enkel
+
+  # De afgeleide portefeuilles van de proefweek (geen API-kosten), zoals in config.yaml.
+  afgeleid:
+    - {naam: proef_ai_rangorde,           soort: rangorde,           bron: proef_ai_mix}
+    - {naam: proef_ai_rangorde_omgekeerd, soort: rangorde_omgekeerd, bron: proef_ai_mix}
+    - {naam: proef_ai_consensus,          soort: consensus,          bronnen: [proef_ai_mix, proef_ai_enkel, proef_ai_haiku]}
 
   # Opus 5.5 kan zijn denkwerk niet uitzetten. Met een krap plafond worden de
   # antwoorden dan afgekapt, dus in de proefweek krijgt elke rol ruimte. Een

@@ -152,8 +152,23 @@ def vergelijk(
 EVEN_BELEGD = " (even belegd)"
 
 
+def eigen_meetlat(naam: str, ai: set[str], bestaand: set[str]) -> str | None:
+    """De meetlat waar een portefeuille tegen wordt afgezet.
+
+    De AI en de regelstrategieën tegen gelijk_alle. Volgt de AI een kleinere lijst
+    (dan bestaat gelijk_ai), dan de AI en de *_ai-varianten tegen gelijk_ai: de
+    gelijk verdeelde meetlat van precies de symbolen waaruit zij kiezen.
+    De meetlatten zelf krijgen geen vergelijking.
+    """
+    if naam in MEETLATTEN:
+        return None
+    if "gelijk_ai" in bestaand and (naam in ai or naam.endswith("_ai")):
+        return "gelijk_ai"
+    return "gelijk_alle" if "gelijk_alle" in bestaand else None
+
+
 def even_belegd_reeksen(
-    con: sqlite3.Connection, pf: str, meetlat: str, tot: str, kal: list[str]
+    con: sqlite3.Connection, pf: str, meetlat: str, tot: str, kal: list[str], van: str | None = None
 ) -> tuple[list[str], list[float], list[float]] | None:
     """Dagrendementen van pf en van 'meetlat, even belegd als pf'.
 
@@ -163,7 +178,7 @@ def even_belegd_reeksen(
     """
     eigen = {r["datum"]: r for r in _reeks(con, pf, tot)}
     tegen = {r["datum"]: r["totaal_usd"] for r in _reeks(con, meetlat, tot)}
-    dagen = [d for d in kal if d in eigen and d in tegen]
+    dagen = [d for d in kal if d in eigen and d in tegen and (van is None or d >= van)]
     if len(dagen) < 2:
         return None
     r_pf, r_eb = [], []
@@ -178,9 +193,9 @@ def even_belegd_reeksen(
 
 
 def vergelijk_even_belegd(
-    con: sqlite3.Connection, pf: str, meetlat: str, tot: str, kal: list[str]
+    con: sqlite3.Connection, pf: str, meetlat: str, tot: str, kal: list[str], van: str | None = None
 ) -> Vergelijking | None:
-    reeksen = even_belegd_reeksen(con, pf, meetlat, tot, kal)
+    reeksen = even_belegd_reeksen(con, pf, meetlat, tot, kal, van=van)
     if reeksen is None or not reeksen[1]:
         return None
     _, r_pf, r_eb = reeksen
@@ -196,7 +211,7 @@ def vergelijk_zelfde_soort(con: sqlite3.Connection, pf: str, tot: str, kal: list
     gelijk_aandelen, plus (het deel in crypto) x het rendement van gelijk_crypto, de
     rest in kas. Een portefeuille die alleen crypto koopt, wordt zo met crypto
     vergeleken en niet met de hele markt: een voorkeur voor een soort telt dan niet
-    als goed kiezen (review 3). Verkennend; de hoofdvraag blijft 'gelijk_alle, even belegd'.
+    als goed kiezen (review 3). Verkennend; de hoofdvraag blijft 'de eigen meetlat, even belegd'.
     """
     eigen = {
         r["datum"]: r for r in con.execute(

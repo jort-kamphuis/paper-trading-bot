@@ -222,8 +222,18 @@ def maak(
     heeft_kansen = con.execute("SELECT 1 FROM ai_besluiten WHERE kans IS NOT NULL LIMIT 1").fetchone()
     kalibratie_tekst = kalibratie.als_tekst(con, *kalibratie.venster(cfg)) if heeft_kansen else ""
 
+    # ---- 6. de spelregels: wanneer telt een verkennende portefeuille als winnaar? ----
+    from bot import dashboard as _dash
+    from bot import meting
+
+    m = cfg.get("meting") or {}
+    hoofd = m.get("proef_ai_portefeuille" if cfg.get("modus") == "proefweek" else "ai_portefeuille", "ai_rangorde")
+    spel_tekst = meting.verkennend_tekst(
+        meting.verkennend(con, cfg, tot, kal, hoofd, _dash.ai_namen(con, cfg))
+    )
+
     tekst = "\n\n".join(
-        d for d in [cijfers_tekst, proef_tekst, kalibratie_tekst, "\n".join(ai_regels), kosten,
+        d for d in [cijfers_tekst, proef_tekst, kalibratie_tekst, spel_tekst, "\n".join(ai_regels), kosten,
                     "Nep-geld, geen beleggingsadvies."] if d
     )
 

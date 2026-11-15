@@ -161,9 +161,9 @@ def als_tekst(prognose: Prognose, min_rondes: int = 3) -> str:
 
 # ------------------------------------------------- de hele meting in een keer
 #
-# De credits worden in een keer gekocht voor de hele meting, met automatisch
-# opwaarderen uit. Dit rekent uit hoeveel dat is, uit wat de proefnachten echt
-# kostten. Het verandert niets; kopen doet de gebruiker zelf.
+# De credits worden per kwartaal gekocht, met automatisch opwaarderen uit. Dit
+# rekent uit hoeveel de hele meting kost en hoeveel dat per kwartaal is, uit wat
+# de proefnachten echt kostten. Het verandert niets; kopen doet de gebruiker zelf.
 
 # Welke proefportefeuille de kosten meet van welke portefeuille in de echte meting.
 PROEF_NAAR_ECHT = {
@@ -290,6 +290,18 @@ def bedrag_als_tekst(b: MetingBedrag, cfg: dict, marge_pct: float = 20.0) -> str
         f"Totaal: {dollar(b.totaal_usd)}. Met {getal(marge_pct, 0)}% marge: "
         f"{dollar(b.totaal_usd * (1 + marge_pct / 100.0))}."
     )
+    # Kopen gaat per kwartaal, niet het hele jaar in een keer.
+    from bot import meting as _meting
+
+    kwartalen = len(_meting.momenten(cfg)) or 1
+    if kwartalen > 1:
+        per = b.totaal_usd / kwartalen
+        regels.append(
+            f"KOOP PER KWARTAAL ({kwartalen} kwartalen): ongeveer {dollar(per)}, "
+            f"met {getal(marge_pct, 0)}% marge {dollar(per * (1 + marge_pct / 100.0))}. "
+            f"Twee weken voor elk meetmoment herinnert de bot je aan het volgende kwartaal; "
+            f"is het tegoed toch op, dan meldt de bot dat in Telegram."
+        )
     # Het budget in de bot telt per maand van de ronde. Toets op de zwaarste maand,
     # niet op het gemiddelde: december heeft meer AI-nachten dan februari.
     maand, nachten = zwaarste_maand(cfg)

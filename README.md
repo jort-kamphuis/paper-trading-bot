@@ -25,36 +25,122 @@ beantwoorden. Dit verandert tijdens de meting niet.
 
 | | |
 |---|---|
-| **Vraag** | Kiest `ai_analist` beter dan de gelijk verdeelde kopen-en-vasthouden-meetlat van zijn eigen symbolen (`gelijk_alle`, of `gelijk_ai` als de AI een kleinere lijst volgt), als die meetlat **elke dag even veel belegd is** als `ai_analist`? |
-| **Maatstaf** | Per beursdag: het rendement van `ai_analist` min (het belegde deel van `ai_analist` de dag ervoor × het rendement van de meetlat). In dollars, inclusief dividend en na kosten en slippage |
-| **Toets** | Eenzijdig (is `ai_analist` beter?). De dagverschillen gaan in aaneengesloten blokken van ongeveer 10 beursdagen; op de blokgemiddelden een t-toets met (aantal blokken − 1) vrijheidsgraden. "Ja" bij een hoger rendement en een p-waarde van 0,05 of lager |
+| **Vraag** | Zit er informatie in de **rangorde** van de AI? Doet `ai_rangorde` (altijd belegd in de 10 symbolen met de grootste voorsprong: de kans van de AI min de basiskans van dat symbool) het beter dan de gelijk verdeelde kopen-en-vasthouden-meetlat van zijn eigen 30 symbolen (`gelijk_ai`), als die meetlat **elke dag even veel belegd is** als `ai_rangorde`? |
+| **Maatstaf** | Per beursdag: het rendement van `ai_rangorde` min (het belegde deel van `ai_rangorde` de dag ervoor × het rendement van de meetlat). In dollars, inclusief dividend en na kosten en slippage. Kas levert 0% op |
+| **Toets** | Eenzijdig (is `ai_rangorde` beter?). De dagverschillen gaan in aaneengesloten blokken van ongeveer 10 beursdagen; op de blokgemiddelden een t-toets met (aantal blokken − 1) vrijheidsgraden |
 | **Start** | maandag 23 november 2026. Deze dag ligt vast in `config.yaml` (`meting.start`), ook als de eerste nacht mislukt |
-| **Einde** | dinsdag 23 februari 2027. Er wordt nooit verder gerekend; pas als de koers van die dag er is, komt er een "ja" of "nee". Daarna beoordeelt de AI niets meer; er is geen tweede meetmoment |
-| **Daarnaast** | Twee cijfers die erbij staan maar niet de hoofdvraag zijn: het verschil met meetlatten van **dezelfde soort** (aandelen plus ETF's, of crypto), even belegd; en de handelskosten van `ai_analist` in procentpunten |
+| **Duur** | 12 maanden, tot en met dinsdag 23 november 2027. Er wordt nooit verder gerekend. Daarna beoordeelt de AI niets meer |
+| **Meetmomenten** | Vier, vooraf vastgelegd: na 3, 6, 9 en 12 maanden (23 februari, 23 mei, 23 augustus en 23 november 2027), elk met een eigen, strengere grens voor de p-waarde (zie hieronder). Het eerste moment met een hoger rendement en een p-waarde op of onder de grens geeft "ja", en dat blijft zo. Is dat na het vierde moment niet gebeurd, dan is het "nee" |
+| **Daarnaast** | Cijfers die erbij staan maar niet de hoofdvraag zijn: het verschil met `gelijk_alle` (alle 46 symbolen), even belegd; het verschil met meetlatten van **dezelfde soort** (aandelen plus ETF's, of crypto), even belegd; en de handelskosten van `ai_rangorde` in procentpunten |
 
-Waarom zo, en niet anders (review november 2026):
+### De vier meetmomenten en hun grenzen
 
-* **Even belegd.** `ai_analist` koopt alleen bij een duidelijke kans en zet 10% per
-  positie in, dus hij heeft vaak geld in kas. `gelijk_alle` zit altijd helemaal in
-  de markt. Zonder correctie meet je vooral hoeveel kas de AI aanhoudt: in een
-  stijgende markt verliest hij dan, ook met goede keuzes. Een portefeuille die
-  half in kas zit en verder precies de markt volgt, kwam in een test over
-  2023-2026 in een derde van de perioden van drie maanden uit als "betekenisvol
-  slechter". De ruwe vergelijking met `gelijk_alle` staat er wel bij, als tweede
-  cijfer, maar is niet de hoofdvraag.
+Wie vier keer kijkt en elke keer de grens van 0,05 gebruikt, heeft samen veel meer
+dan 5% kans om door toeval een keer "ja" te zien (in een simulatie met deze toets:
+meer dan 9%). Daarom is de grens per moment strenger. De methode heet
+**O'Brien-Fleming** en wordt veel gebruikt bij medische studies met
+tussentijdse analyses: vroeg is de grens heel streng, aan het eind bijna de
+gewone 0,05. Zo kost vroeg kijken bijna niets van de kans om aan het eind een echt
+verschil te vinden.
+
+| Meetmoment | Datum | Grens voor de p-waarde (eenzijdig) |
+|---|---|---|
+| na 3 maanden | 23 februari 2027 | 0,00026 |
+| na 6 maanden | 23 mei 2027 | 0,0071 |
+| na 9 maanden | 23 augustus 2027 | 0,0226 |
+| na 12 maanden | 23 november 2027 | 0,0415 |
+
+* De grenzen horen bij vier even grote stappen en samen 5% eenzijdig (in de
+  z-schaal: 1,733 × wortel(4 / nummer van het moment)). Met de toets van deze bot
+  komt het in een simulatie zonder echt verschil uit op 5 tot 6% vals alarm over
+  alle momenten samen. `tests/test_meting.py` controleert dat bij elke ronde.
+* Een moment telt zodra de koers van die dag er is, en er wordt gerekend tot en met
+  die datum, niet verder. Valt de datum in het weekend (23 mei 2027 is een
+  zondag), dan is dat tot en met de laatste beursdag ervoor.
+* Tussen de momenten staat er "nog niet te zeggen", ook bij een lage p-waarde.
+* Na een "ja" loopt de meting gewoon door tot 23 november 2027, zodat de andere
+  cijfers compleet zijn. Het antwoord verandert dan niet meer.
+* De grenzen staan in `config.yaml` onder `meting.meetmomenten`; het rekenwerk in
+  `bot/meting.py`.
+
+### Waarom de rangorde, en niet `ai_analist`
+
+`ai_analist` koopt alleen bij een kans van 0,55 of meer. In de eerste echte
+proefnacht (13 november 2026, 46 symbolen) kwam geen enkele kans daar in de buurt:
+de hoogste lag 0,04 boven de basiskans van het symbool. Een portefeuille die
+niets koopt, kan de vraag niet beantwoorden. De koopgrens verlagen om toch trades
+te krijgen zou de regels aanpassen aan de uitkomst.
+
+`ai_rangorde` gebruikt dezelfde kansen anders: hij is altijd belegd in de 10
+symbolen die de AI het hoogst boven hun basiskans zet, ook als dat verschil nul of
+negatief is. De vraag is dan niet "durft de AI iets te kopen?" maar "staat wat de
+AI hoger zet, er twee weken later ook beter voor?". Hij wisselt alleen na de
+houdtijd van 14 dagen, heeft hooguit 2 cryptoposities, en roept de API niet aan:
+hij leest de kansen die `ai_analist` die nacht al gaf. `ai_analist` zelf blijft
+draaien, als verkennende portefeuille.
+
+Een eerlijke kanttekening: het model geeft kansen in stappen van 0,01 en de
+meeste liggen dicht bij de basiskans. In de proefnacht hadden 4 van de 30
+symbolen een positieve voorsprong en stonden er 10 precies op nul. Bij een gelijke
+voorsprong beslist daarom een tweede sleutel: de **verwachting gedeeld door de
+dagschommeling**, en pas daarna de naam van het symbool. Die tweede sleutel
+bepaalt dus een flink deel van de keuze.
+
+Dat is ook een signaal van de AI, geen toeval of een regel van buitenaf. De
+verwachting (het extra rendement in procenten dat het model verwacht) komt uit
+hetzelfde antwoord als de kans. Alleen de dagschommeling rekent de code zelf uit,
+uit de koersen van de laatste 28 dagen: delen daardoor maakt een verwachting van
+1% bij een rustig aandeel zwaarder dan 1% bij een wild aandeel. Het is dezelfde
+volgorde die `ai_analist` gebruikt als er meer koopkandidaten dan plekken zijn.
+De hoofdvraag meet dus de rangorde van de AI als geheel: eerst de kans tegenover
+de basiskans, bij een gelijke stand de verwachting per eenheid schommeling.
+
+Waarom verder zo, en niet anders (review november 2026):
+
+* **De eigen lijst als meetlat.** `ai_rangorde` kiest uit 30 symbolen. De eerlijke
+  meetlat is dan kopen en vasthouden van precies die 30 (`gelijk_ai`). Tegenover
+  alle 46 (`gelijk_alle`) zou een deel van het verschil komen door welke symbolen
+  op de lijst staan, niet door de rangorde. Dat cijfer staat er wel bij.
+* **Even belegd.** Een portefeuille die niet helemaal belegd is, verliest in een
+  stijgende markt van een meetlat die dat wel is, ook met goede keuzes. Een
+  portefeuille die half in kas zit en verder precies de markt volgt, kwam in een
+  test over 2023-2026 in een derde van de perioden van drie maanden uit als
+  "betekenisvol slechter". Daarom staat de meetlat elke dag even veel belegd als
+  de portefeuille de dag ervoor, de rest in kas tegen 0%. `ai_rangorde` is vrijwel
+  altijd vol belegd, dus daar maakt het weinig uit; voor de andere portefeuilles
+  veel.
 * **De toets.** De eerste opzet (een blok-bootstrap) zei bij 61 beursdagen zonder
   enig echt verschil in ongeveer 9% van de gevallen "betekenisvol", in plaats van
   5%. De toets op blokgemiddelden komt in een simulatie op ongeveer 5% uit, ook
   als goede en slechte dagen elkaar opvolgen. `tests/test_statistiek_toets.py`
   controleert dat bij elke ronde opnieuw.
-* **Wat de meting kan zien.** Over 3 maanden is dit weinig: een voordeel moet groot
-  zijn om "ja" te halen. Een "nee" betekent dus vooral: er was geen voordeel te
-  zien dat groot genoeg is om te tellen, niet dat er bewezen geen is. Op 23
-  februari staat daarom ook het verschil zelf in het verslag, niet alleen ja of nee.
+* **Wat de meting kan zien.** Ook over 12 maanden moet een voordeel flink zijn om
+  "ja" te halen, en op het eerste meetmoment extreem groot. Een "nee" betekent dus
+  vooral: er was geen voordeel te zien dat groot genoeg is om te tellen, niet dat
+  er bewezen geen is. Bij elk meetmoment staat daarom ook het verschil zelf in
+  het verslag, niet alleen ja of nee.
 
-Alles daarnaast is **verkennend**: de regelstrategieën, de meetlatten SPY en BTC,
-het Haiku-controlepotje, `ai_enkel`, de weekrapporten. Interessant om te zien,
-maar daar trek je geen harde conclusie uit. Een weekrapport is een tussenstand.
+### Spelregels voor al het andere
+
+Alles naast de hoofdvraag is **verkennend**: de regelstrategieën, `ai_analist`,
+het Haiku-controlepotje, `ai_enkel`, `ai_rangorde_omgekeerd`, `ai_consensus`, de
+meetlatten SPY en BTC, de weekrapporten. Met zoveel portefeuilles haalt er door
+toeval altijd wel een de grens van 0,05. Daarom, vooraf vastgelegd:
+
+* Een portefeuille telt alleen als **winnaar** als hij zijn eigen meetlat (even
+  belegd) verslaat met een p-waarde van **0,05 gedeeld door het aantal verkennende
+  portefeuilles** of lager, in een afgerond kwartaal, **en** dat in een later,
+  nieuw kwartaal nog een keer doet. Eén keer heet "kandidaat". De kwartalen zijn
+  de periodes tussen de meetmomenten, en elk kwartaal wordt apart gemeten.
+* Het aantal is het aantal actieve portefeuilles op dat moment, zonder de
+  meetlatten en zonder `ai_rangorde`. Komen er portefeuilles bij, dan wordt de
+  grens strenger.
+* Deze lat ligt hoog: in één kwartaal zijn er ongeveer zes blokken van 10
+  beursdagen. Een winnaar is dus zeldzaam, en dat is de bedoeling.
+* **Kas levert 0% op**, overal: in de portefeuilles en in de even belegde meetlat.
+
+Het dashboard en het weekrapport tonen per portefeuille "verkennend", "kandidaat"
+of "winnaar", met de grens erbij. Een weekrapport is een tussenstand.
 
 **Ook verkennend, maar vooraf vastgelegd: klopten de kansen?** Elke kans van de
 AI wordt na 14 kalenderdagen gescoord tegen wat er echt gebeurde: vanaf de
@@ -81,27 +167,33 @@ De twee soorten worden nooit samengevoegd tot één score.
 
 Hoe de kansen worden beoordeeld, ligt ook vooraf vast:
 
-* Alleen kansen van beslisdagen van 23 november tot en met 23 februari tellen mee.
+* Alleen kansen van beslisdagen van 23 november 2026 tot en met 23 november 2027 tellen mee.
 * **Relatief:** is de Brier-score beter dan "altijd de basiskans achteraf zeggen"? Per
   beslisdag het gemiddelde verschil, en daarop dezelfde toets op blokgemiddelden
   als bij de hoofdvraag (eenzijdig, blokken van 10 beslisdagen). Verkennend.
 * **Absoluut** (SPY en BTC): alleen tonen, geen conclusie. Dat zijn twee kansen per
-  dag over overlappende periodes; daar valt in drie maanden niets uit af te leiden.
+  dag over overlappende periodes; daar valt weinig uit af te leiden.
 
 **Waarom ook "dezelfde soort"?** Een AI die alleen crypto koopt, wint of verliest
 tegenover alle 46 symbolen vooral door de richting van crypto, niet door goed
 kiezen. Daarom lopen er twee meetlatten mee, `gelijk_aandelen` (aandelen plus
-ETF's) en `gelijk_crypto`, en wordt `ai_analist` ook vergeleken met wat hij zelf
-per soort belegd had. De hoofdvraag blijft de vergelijking met `gelijk_alle`.
+ETF's) en `gelijk_crypto`, en wordt elke AI-portefeuille ook vergeleken met wat
+hij zelf per soort belegd had. De hoofdvraag blijft de vergelijking met de eigen
+meetlat (`gelijk_ai`), even belegd.
 
-**Eerlijke verwachting:** drie maanden is kort. De kans is groot dat het verschil
-aan het eind niet te onderscheiden is van toeval. Dat is dan ook een uitkomst:
-het betekent dat er geen voordeel te zien was dat groot genoeg is om te tellen.
+**Eerlijke verwachting:** de kans is groot dat het verschil aan het eind niet te
+onderscheiden is van toeval. Dat is dan ook een uitkomst: het betekent dat er
+geen voordeel te zien was dat groot genoeg is om te tellen.
 
-**De opzet is bevroren op 14 november 2026.** Na drie reviewrondes en een
-eindcontrole verandert er niets meer aan de regels, de prompts, de drempels en de
-toets. Alleen echte fouten worden nog gerepareerd, en dat staat dan in de
-geschiedenis van de repository.
+**De opzet lag vast op 14 november 2026**, na drie reviewrondes en een
+eindcontrole. Op 15 november, nog voor de start, zijn op basis van de eerste
+proefnacht vier dingen bewust veranderd en hier vastgelegd: de hoofdvraag (de
+rangorde in plaats van `ai_analist`), de duur (12 maanden met vier meetmomenten
+in plaats van 3 maanden), de spelregels voor de verkennende portefeuilles, en de
+AI-lijst (30 symbolen). De prompts, de drempels van `ai_analist` en de toets zelf
+zijn niet veranderd. Vanaf de start op 23 november verandert er niets meer aan;
+alleen echte fouten worden nog gerepareerd, en dat staat dan in de geschiedenis
+van de repository.
 
 **Tussenstanden zijn verkennend.** Weekrapporten en het dashboard tonen onderweg
 p-waarden met het woord "verkennend", nooit "betekenisvol". Wie elke week kijkt en
@@ -227,10 +319,11 @@ De link staat ook onder elk Telegram-bericht. Het werkt op de laptop en op de
 telefoon, en het verandert niets aan de portefeuilles: het laat alleen zien wat
 er in de databases staat.
 
-* **Overzicht:** de hoofdvraag met de tussenstand en het aantal dagen tot de
-  einddatum, wat de AI vandaag deed, de waarde van alle portefeuilles in één
-  grafiek (de meetlatten gestippeld, elke lijn aan en uit te zetten) en een
-  scorekaart per portefeuille.
+* **Overzicht:** de hoofdvraag met de tussenstand, de vier meetmomenten met hun
+  grens en uitslag, en het aantal dagen tot het volgende meetmoment; wat de AI
+  vandaag deed; de waarde van alle portefeuilles in één grafiek (de meetlatten
+  gestippeld, elke lijn aan en uit te zetten); de spelregels; en een scorekaart
+  per portefeuille met "hoofdvraag", "verkennend", "kandidaat" of "winnaar".
 * **Kansen:** per AI-portefeuille en apart per soort vraag de Brier-score
   (tegenover 0,25) en de kalibratie in vakken van 0,05.
 * **Symbolen:** de dagkoersen als kaarsen, met de lijnen die de bot echt
@@ -240,8 +333,8 @@ er in de databases staat.
 * **Weekrapport**, **Kosten**, en bovenaan de keuze tussen de echte meting en de
   proefweek (die telt niet mee).
 
-Het label bij de hoofdvraag blijft tot de einddatum "nog niet te zeggen", ook
-als de p-waarde onderweg laag is: wie elke dag kijkt en bij het eerste mooie
+Het label bij de hoofdvraag blijft tussen de meetmomenten "nog niet te zeggen",
+ook als de p-waarde onderweg laag is: wie elke dag kijkt en bij het eerste mooie
 getal stopt, maakt de toets waardeloos.
 
 Wat erin staat: alleen resultaten (koersen, standen, trades, beoordelingen,
@@ -268,26 +361,29 @@ niets telt mee.
   verandert niet. Na de proefweek geldt vanzelf weer alleen `config.yaml`.
 * **Eigen database:** `data/proefweek.db`. De echte database blijft onaangeroerd.
 * **Elk Telegram-bericht** begint met `[PROEFWEEK, telt niet mee]`.
-* **Vier AI-portefeuilles op alle 46 symbolen**, met precies de code van de
-  echte meting:
+* **Vier AI-portefeuilles op de 30 symbolen van de AI-lijst** (tot en met 15
+  november op alle 46), met precies de code van de echte meting:
   * `proef_ai_opus`: alles op Opus 5.5, alleen tot en met 19 november (zolang
     het gratis tegoed loopt, dat op 20 november om 00:00 UTC verloopt);
   * `proef_ai_mix`, `proef_ai_haiku` en `proef_ai_enkel`: dezelfde opzet als
     `ai_analist`, `ai_controle_haiku` en `ai_enkel` in de echte meting. Zo meet
     je vooraf wat die kosten.
+* **Drie afgeleide portefeuilles** zonder API-kosten, zoals in de echte meting:
+  `proef_ai_rangorde`, `proef_ai_rangorde_omgekeerd` (allebei op de kansen van
+  `proef_ai_mix`) en `proef_ai_consensus` (mix, enkel en Haiku).
 * **Budget:** $90 voor de proefweek. De rondes van 20 en 21 november draaien
   zonder Opus, op de credits die je zelf bijzet.
 * **De akkoordroute als test:** zondag het weekrapport (met een testvoorstel als
   Claude niets voorstelt), woensdag 18 november een extra rapport waarin de
   proef wordt beoordeeld. Dan krijg je `/akkoord` of `/afwijzen` te zien. Een
   akkoord wordt helemaal verwerkt en gemarkeerd als proefweek.
-* **18 november:** een herinnering in Telegram om de credits voor de hele meting
-  in één keer te kopen, met automatisch opwaarderen uit. De bot rekent het bedrag
-  zelf uit: de gemeten kosten per symbool per dag van de proefnachten, maal de
-  gekozen AI-lijst, maal de 62 beursdagen van de meting, plus de weekrapporten,
-  met het totaal en het totaal met 20% marge. Het proefweekverslag laat hetzelfde
-  zien voor 15, 30 en 46 symbolen. Is het tegoed tijdens de meting toch op, dan
-  meldt de bot dat apart in Telegram.
+* **18 november:** een herinnering in Telegram om de credits voor het eerste
+  kwartaal te kopen, met automatisch opwaarderen uit. Kopen gaat per kwartaal,
+  niet het hele jaar in één keer. De bot rekent het bedrag zelf uit: de gemeten
+  kosten per symbool per dag van de proefnachten, maal de AI-lijst (30), maal de
+  252 beursdagen van de meting, plus de weekrapporten; dat totaal gedeeld door
+  vier, met en zonder 20% marge. Het proefweekverslag laat het ook zien voor 15,
+  30 en 46 symbolen.
 
 Bekijken:
 
@@ -301,8 +397,8 @@ Bekijken:
 
 Het verslag laat per AI-portefeuille zien welke kansen de AI gaf, hoe vaak die
 de koopdrempels haalden, en wat een symbool per dag kost, met een maandschatting
-voor 15, 30 en 46 symbolen. Daarmee kies je na twee proefnachten de lijst
-symbolen voor de AI in de echte meting. De bot kiest dat niet zelf.
+voor 15, 30 en 46 symbolen. De lijst voor de echte meting is op 15 november
+vastgelegd op 30 symbolen (zie "Wat er gevolgd wordt").
 
 **Op 24 november schakelt de bot vanzelf om.** De ronde van 00:30 UTC die nacht
 verwerkt maandag 23 november: die dag begint de echte meting (alle
@@ -506,11 +602,35 @@ De regelstrategieën volgen **46 symbolen**: 30 grote aandelen, 8 indexfondsen
 (ETF's) en 8 cryptoparen. Die lange lijst is er met een reden: hoe meer trades,
 hoe sneller je kunt zien of een resultaat echt is of toeval.
 
-Welke symbolen de AI-analist volgt (`ai_watchlist` in `config.yaml`), wordt
-gekozen na twee proefnachten, op basis van de gemeten kosten, en ligt daarna
-vast. Volgt de AI niet alles, dan draaien de drie regelstrategieën ook op de
-AI-lijst (`momentum_ai`, enzovoort), zodat je de AI kunt vergelijken met regels
-op dezelfde symbolen.
+De AI volgt **30 van die 46** (`ai_watchlist` in `config.yaml`). De lijst ligt
+vast voor de start en verandert tijdens de meting niet. Hij is gekozen op
+spreiding, niet op wat het in de proefweek goed deed:
+
+| Groep | Symbolen |
+|---|---|
+| Technologie en chips (5) | AAPL, MSFT, NVDA, ASML, TSM |
+| Internet en media (3) | GOOGL, META, NFLX |
+| Winkels en auto's (3) | AMZN, TSLA, HD |
+| Dagelijkse boodschappen (3) | WMT, KO, PG |
+| Banken en betalen (2) | JPM, V |
+| Gezondheid (3) | UNH, JNJ, NVO |
+| Energie (1) | XOM |
+| Indexfondsen (6) | SPY (grote Amerikaanse bedrijven), IWM (kleine), VEA (ontwikkelde landen buiten de VS), EEM (opkomende landen), GLD (goud), XLE (energie) |
+| Crypto (4) | BTC/USDT, ETH/USDT, SOL/USDT, XRP/USDT |
+
+* **20 aandelen** uit alle sectoren van de lange lijst, waarvan drie niet-Amerikaans
+  (ASML, TSM, NVO). Afgevallen zijn tien aandelen uit sectoren die al goed
+  vertegenwoordigd zijn: AVGO, AMD, ORCL, CRM, SAP, SHOP, MA, BAC, COST en PEP.
+* **6 indexfondsen** die elk iets anders volgen. QQQ en XLF vallen af: die
+  overlappen sterk met de technologie- en bankaandelen die al op de lijst staan.
+* **4 cryptomunten.** De AI mag hooguit 2 cryptoposities hebben en cryptomunten
+  bewegen sterk samen, dus meer munten voegt weinig toe. BTC en ETH, plus SOL en
+  XRP; dat het die twee zijn en niet BNB, ADA, DOGE of LTC is een keuze vooraf,
+  niet op resultaten.
+
+De drie regelstrategieën draaien ook op de AI-lijst (`momentum_ai`, enzovoort),
+zodat je de AI kunt vergelijken met regels op dezelfde symbolen. `gelijk_ai`
+(deze 30, gelijk verdeeld, kopen en vasthouden) is de meetlat van de AI.
 
 Alles staat in `config.yaml`.
 
@@ -595,13 +715,38 @@ Bull, bear en risk manager zien ook zelf de nieuwskoppen, niet alleen de
 samenvatting. Alles wordt bewaard in de tabel `ai_besluiten`: de kengetallen,
 wat elke rol zei, en **welke nieuwskoppen de AI zag, met hun publicatietijd**.
 
-### Drie AI-portefeuilles
+### Zes AI-portefeuilles
 
-* **`ai_analist`**: zoals hierboven. Dit is de portefeuille van de hoofdvraag.
+Drie vragen de AI elke nacht om kansen (en kosten dus API-geld):
+
+* **`ai_analist`**: zoals hierboven. Levert de kansen voor de hoofdvraag, en
+  handelt zelf volgens de beslisregel (kopen vanaf 0,55). Verkennend.
 * **`ai_controle_haiku`**: precies hetzelfde, maar alles op het goedkoopste
   model. Is het duurdere model zijn geld waard?
 * **`ai_enkel`**: een enkele aanroep (Sonnet) die alles zelf afweegt, zonder
   debat. Voegt het debat iets toe?
+
+Drie zijn **afgeleid**: ze handelen op de kansen die er die nacht al zijn en
+roepen de API niet aan (`bot/ai/afgeleid.py`). Voor alle drie: 10% per positie,
+hooguit 10 posities, hooguit 2 crypto, en wisselen alleen na de houdtijd van 14
+kalenderdagen.
+
+* **`ai_rangorde`**: de portefeuille van de hoofdvraag. Altijd belegd in de 10
+  symbolen met de grootste voorsprong (kans van `ai_analist` min de basiskans van
+  het symbool), ook bij een voorsprong van nul of negatief. Na de houdtijd blijft
+  een positie als hij nog bij de beste 10 hoort; anders gaat hij eruit en komt de
+  hoogste op de lijst die er nog niet in zit ervoor in de plaats.
+* **`ai_rangorde_omgekeerd`**: de controle. Precies het spiegelbeeld: de 10 met de
+  kleinste voorsprong. Als de rangorde iets betekent, hoort deze het slechter te
+  doen dan `ai_rangorde`.
+* **`ai_consensus`**: koopt alleen wat `ai_analist`, `ai_enkel` en
+  `ai_controle_haiku` alle drie boven de basiskans zetten (precies op de
+  basiskans telt niet). Niet altijd belegd.
+
+In een nacht waarin een bron niet alle symbolen kon beoordelen, doen de afgeleide
+portefeuilles niets: de rangorde zou dan scheef zijn naar wat toevallig wel
+beoordeeld is. Wordt een bijportefeuille overgeslagen om het budget, dan wacht
+`ai_consensus` tot alle drie de bronnen er weer zijn.
 
 ### Regels die de bot zelf afdwingt
 
@@ -627,15 +772,21 @@ er is geen nieuwsgeschiedenis. Daarom:
 
 ### Kosten
 
-Het budget staat in `config.yaml` op **$35 per maand**. De credits worden in één
-keer gekocht voor de hele meting, met automatisch opwaarderen uit: het tegoed
-zelf is de noodrem. Het bedrag komt uit de gemeten kosten van de proefnachten
-(zie de proefweek). Is het tegoed op, dan meldt de bot dat in Telegram.
+Het budget staat in `config.yaml` op **$35 per maand**. De credits koop je zelf,
+**per kwartaal**, met automatisch opwaarderen uit: het tegoed zelf is de noodrem.
+Het bedrag voor het eerste kwartaal komt uit de gemeten kosten van de proefnachten
+(zie de proefweek). Twee weken voor het meetmoment van 23 februari, 23 mei en 23
+augustus 2027 stuurt de bot een herinnering voor het volgende kwartaal, met het
+bedrag uit de kosten die dan echt gemeten zijn, plus 20% marge. Is het tegoed toch
+op, dan meldt de bot dat in Telegram; in zo'n nacht doen de afgeleide
+portefeuilles niets. De afgeleide portefeuilles (`ai_rangorde`,
+`ai_rangorde_omgekeerd`, `ai_consensus`) kosten zelf niets extra.
 
 Het budget telt per maand, en december heeft de meeste AI-nachten (22). Wordt het
 in een maand krap, dan stoppen eerst `ai_controle_haiku` en `ai_enkel`: de bot
-houdt genoeg over om `ai_analist`, de portefeuille van de hoofdvraag, de maand te
-laten afmaken. Na de einddatum beoordeelt de AI niets meer.
+houdt genoeg over om `ai_analist`, die de kansen voor de hoofdvraag levert, de
+maand te laten afmaken. Na de einddatum (23 november 2027) beoordeelt de AI niets
+meer; de posities lopen dan af na hun houdtijd.
 
 * **Nooit twee keer betalen.** Een beoordeling die al bestaat, wordt niet opnieuw
   gevraagd. Draait het script twee keer op een dag, dan kost de tweede keer niets.
@@ -757,6 +908,7 @@ paper-trading-bot/
 │   ├── telegram.py          berichten naar Telegram, en je antwoorden lezen
 │   ├── volledigheid.py      zijn de koersen compleet genoeg om te handelen?
 │   ├── rapport.py           de cijfers van het weekrapport
+│   ├── meting.py            de meetmomenten van de hoofdvraag en de spelregels
 │   ├── weekrapport.py       het hele weekrapport
 │   ├── challenger.py        een verbetering eerlijk testen, en je akkoord
 │   ├── challenger_toets.py  de backtest die een voorstel eerst moet halen
@@ -769,6 +921,7 @@ paper-trading-bot/
 │       ├── analist.py       de kans per symbool (debat of enkel)
 │       ├── beslisregel.py   de code die beslist wat er gekocht en verkocht wordt
 │       ├── ronde.py         de dagelijkse ronde van de AI
+│       ├── afgeleid.py      rangorde, omgekeerd en consensus (zonder de API)
 │       ├── client.py        de verbinding met de Claude-API
 │       ├── budget.py        de budgetbewaking
 │       ├── kostenprognose.py  past het in een maand?
@@ -789,8 +942,17 @@ paper-trading-bot/
 │   ├── zet_github_secrets.py  sleutels uit .env naar GitHub Secrets
 │   ├── slank_maken.py       database klein maken voor git (door GitHub)
 │   └── meld_fout.py         foutmelding naar Telegram (door GitHub)
-└── tests/                   370 tests
+└── tests/                   422 tests
 ```
+
+### Op de lijst
+
+* **December 2026: de groei van de database.** `data/trading.db` staat in git en
+  groeit met elke AI-nacht: naar schatting ongeveer 0,7 MB per nacht bij 30
+  symbolen, dus ruim 170 MB in een jaar. GitHub weigert bestanden boven 100 MB.
+  Bij een meting van 12 maanden moet dit dus in de eerste maanden opgelost zijn,
+  bijvoorbeeld door de lange teksten per beoordeling apart of ingepakt op te
+  slaan. Te beslissen en te bouwen in december.
 
 ### Wanneer begint de meting
 

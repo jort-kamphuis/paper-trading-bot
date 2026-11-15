@@ -52,7 +52,8 @@ def test_proefweek_tot_en_met_23_november():
 def test_herinnering_over_de_credits():
     h = OVERLAY["proefweek"]["herinnering"]
     assert h["datum"] == "2026-11-18"
-    assert "in een keer" in h["tekst"] and "automatisch opwaarderen uit" in h["tekst"]
+    assert "eerste kwartaal" in h["tekst"] and "per kwartaal" in h["tekst"] and "automatisch opwaarderen uit" in h["tekst"]
+    assert "niet het hele jaar in een keer" in h["tekst"]
     assert h["marge_pct"] == 20
 
 
@@ -61,7 +62,9 @@ def test_proefweek_instellingen():
     assert cfg["modus"] == "proefweek"
     assert Path(cfg["database"]).name == "proefweek.db"
     assert cfg["label"].startswith("[PROEFWEEK")
-    assert len(cfg["ai_watchlist"]) == len(conf.alle_symbolen(conf.laad())) == 46
+    # De proefweek test de echte opzet: dezelfde 30 symbolen als de echte meting.
+    assert len(conf.alle_symbolen(conf.laad())) == 46
+    assert cfg["ai_watchlist"] == conf.laad()["ai_watchlist"] and len(cfg["ai_watchlist"]) == 30
     assert cfg["ai"]["budget"]["max_usd_per_maand"] == 90
     assert cfg["challenger"]["weken"] == 0
     assert cfg["challenger"]["droogtest"] is True

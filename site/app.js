@@ -71,6 +71,8 @@ const VAST = {
   gelijk_aandelen: '#8d9db6', gelijk_crypto: '#d4a373',
   ai_analist: '#2962ff', proef_ai_mix: '#2962ff', ai_controle_haiku: '#26c6da', proef_ai_haiku: '#26c6da',
   ai_enkel: '#ab47bc', proef_ai_enkel: '#ab47bc', proef_ai_opus: '#f06292',
+  ai_rangorde: '#448aff', proef_ai_rangorde: '#448aff', ai_rangorde_omgekeerd: '#ef5350', proef_ai_rangorde_omgekeerd: '#ef5350',
+  ai_consensus: '#7e57c2', proef_ai_consensus: '#7e57c2',
   momentum: '#66bb6a', mean_reversion: '#fdd835', trend: '#ff7043',
   momentum_ai: '#a5d6a7', mean_reversion_ai: '#fff59d', trend_ai: '#ffab91',
 };
@@ -153,6 +155,24 @@ async function teken(tab) {
 
 /* ------------------------------------------------------------ overzicht */
 
+function momentenTabel(h) {
+  if (!h.momenten || h.momenten.length < 2) return null;
+  const uitslag = m => !m.bereikt ? 'nog niet bereikt'
+    : m.beslissend ? 'gehaald: dit moment beslist'
+    : m.gehaald ? 'gehaald (er was al beslist)' : 'niet gehaald';
+  return el('div', { class: 'schuif', style: 'margin-top:10px' },
+    el('table', { class: 'tabel' },
+      el('thead', null, el('tr', null,
+        el('th', { text: 'meetmoment' }), el('th', { text: 'datum' }), el('th', { text: 'grens p-waarde' }),
+        el('th', { text: 'verschil' }), el('th', { text: 'p-waarde' }), el('th', { text: 'uitslag' }))),
+      el('tbody', null, h.momenten.map(m => el('tr', null,
+        el('td', { text: 'na ' + (m.nummer * 3) + ' maanden' }), el('td', { text: datum(m.datum) }),
+        el('td', { text: getal(m.grens_p, m.grens_p < 0.001 ? 5 : 4) }),
+        el('td', { text: m.verschil_pp === null || m.verschil_pp === undefined ? '-' : pp(m.verschil_pp) }),
+        el('td', { text: m.p_waarde === null || m.p_waarde === undefined ? '-' : getal(m.p_waarde, 4) }),
+        el('td', { text: uitslag(m) }))))));
+}
+
 async function tekenOverzicht(p) {
   const [ov, ka] = await Promise.all([laad(pad('overzicht.json')), laad(pad('kansen.json'))]);
   const delen = [];
@@ -168,11 +188,14 @@ async function tekenOverzicht(p) {
         cijfer(h.ai, pct(h.ai_rendement_pct) + (h.ai_belegd_pct === null ? '' : ' (' + pct(h.ai_belegd_pct, 0, false) + ' belegd)'), kleurTeken(h.ai_rendement_pct)),
         cijfer(h.meetlat + ', even belegd: verschil', pp(h.verschil_pp), kleurTeken(h.verschil_pp)),
         cijfer('p-waarde (eenzijdig)', h.p_waarde === null ? 'nog te weinig dagen' : getal(h.p_waarde, 2)),
-        cijfer('einddatum ' + datum(h.einde), 'nog ' + h.dagen_tot_einde + ' dagen')),
+        h.volgend_moment
+          ? cijfer('volgend meetmoment ' + datum(h.volgend_moment), 'nog ' + h.dagen_tot_moment + ' dagen')
+          : cijfer('einddatum ' + datum(h.einde), 'nog ' + h.dagen_tot_einde + ' dagen')),
+      momentenTabel(h),
       el('p', { class: 'klein', style: 'margin:8px 0 0' },
-        el('span', { class: 'dim', text: 'Ter vergelijking, niet de hoofdvraag: tegen meetlatten van dezelfde soort (aandelen of crypto), even belegd: ' + pp(h.soort_verschil_pp) + (h.soort_p_waarde === null || h.soort_p_waarde === undefined ? '' : ', p ' + getal(h.soort_p_waarde, 2)) + '. Tegen ' + h.meetlat + ' zelf (' + pct(h.meetlat_rendement_pct) + '): ' + pp(h.ruw_verschil_pp) + (h.ruw_p_waarde === null ? '' : ', p ' + getal(h.ruw_p_waarde, 2)) + '. Handelskosten van ' + h.ai + ' tot nu toe: ' + (h.ai_kosten_pp === null || h.ai_kosten_pp === undefined ? '-' : getal(h.ai_kosten_pp, 2) + ' procentpunt') + '; de meetlat betaalt geen kosten.' })),
+        el('span', { class: 'dim', text: 'Ter vergelijking, niet de hoofdvraag: tegen meetlatten van dezelfde soort (aandelen of crypto), even belegd: ' + pp(h.soort_verschil_pp) + (h.soort_p_waarde === null || h.soort_p_waarde === undefined ? '' : ', p ' + getal(h.soort_p_waarde, 2)) + '. ' + (h.alle_verschil_pp === null || h.alle_verschil_pp === undefined ? '' : 'Tegen gelijk_alle (alle symbolen), even belegd: ' + pp(h.alle_verschil_pp) + (h.alle_p_waarde === null || h.alle_p_waarde === undefined ? '' : ', p ' + getal(h.alle_p_waarde, 2)) + '. ') + 'Tegen ' + h.meetlat + ' zelf (' + pct(h.meetlat_rendement_pct) + '): ' + pp(h.ruw_verschil_pp) + (h.ruw_p_waarde === null ? '' : ', p ' + getal(h.ruw_p_waarde, 2)) + '. Handelskosten van ' + h.ai + ' tot nu toe: ' + (h.ai_kosten_pp === null || h.ai_kosten_pp === undefined ? '-' : getal(h.ai_kosten_pp, 2) + ' procentpunt') + '; de meetlat betaalt geen kosten.' })),
       el('p', { style: 'margin:10px 0 0' }, el('span', { class: 'pil ' + cls, text: tekstLabel })),
-      el('p', { class: 'dim klein', style: 'margin:6px 0 0', text: 'De meetlat staat elke dag even veel belegd als ' + h.ai + ' de dag ervoor, de rest in kas. Zo meet het verschil het kiezen, en niet hoeveel geld er in kas staat. Tot de koers van de einddatum er is, blijft dit "nog niet te zeggen", ook bij een lage p-waarde. Daarna "ja" bij een hoger rendement en een p-waarde van 0,05 of lager, anders "nee". Er wordt nooit verder gerekend dan de einddatum.' })));
+      el('p', { class: 'dim klein', style: 'margin:6px 0 0', text: 'De meetlat staat elke dag even veel belegd als ' + h.ai + ' de dag ervoor, de rest in kas. Zo meet het verschil het kiezen, en niet hoeveel geld er in kas staat. De meting duurt 12 maanden, met vier vaste meetmomenten. Wie vier keer kijkt, heeft meer kans op toeval; daarom is de grens per moment strenger dan 0,05 (O\'Brien-Fleming: vroeg heel streng, aan het eind bijna 0,05; samen ongeveer 5% kans op vals alarm). Het eerste moment met een hoger rendement en een p-waarde op of onder de grens geeft "ja" en dat blijft zo. Is dat na het laatste moment niet gebeurd, dan is het "nee". Tussen de momenten blijft dit "nog niet te zeggen", ook bij een lage p-waarde. Er wordt nooit verder gerekend dan de einddatum.' })));
   }
 
   if (ov.ai_vandaag && ov.ai_vandaag.length) {
@@ -184,7 +207,8 @@ async function tekenOverzicht(p) {
           el('div', { style: 'font-size:13px', text: a.beoordeeld + ' beoordeeld, ' + a.kopen + ' kopen, ' + a.verkopen + ' verkopen' + (a.gemist ? '; ' + a.gemist + ' beursdagen gemist sinds de start' : '') }))))));
   }
 
-  const hoofdAi = h ? h.ai : null;
+  // De kansen komen van de portefeuille die de AI aanroept (de bron van de hoofdvraag).
+  const hoofdAi = h ? (h.bron || h.ai) : null;
   const groepen = (ka.groepen || []).filter(g => g.portefeuille === hoofdAi);
   if (groepen.length) {
     delen.push(el('div', { class: 'paneel' },
@@ -202,11 +226,22 @@ async function tekenOverzicht(p) {
     el('p', { class: 'dim klein', style: 'margin:6px 0 0', text: 'Gestippeld: de meetlatten. Klik op een naam om de lijn aan of uit te zetten. Gemeten op de dagen dat de Amerikaanse beurs open was.' }));
   delen.push(grafiekPaneel);
 
+  if (ov.spelregels && ov.spelregels.aantal) {
+    const sp = ov.spelregels;
+    delen.push(el('div', { class: 'paneel' },
+      el('h3', { text: 'Spelregels voor de andere portefeuilles' }),
+      el('p', { class: 'klein', style: 'margin:0', text: 'Alleen de hoofdvraag telt als toets. De andere ' + sp.aantal + ' portefeuilles zijn verkennend: met zoveel portefeuilles haalt er door toeval altijd wel een de grens van 0,05. Een portefeuille heet pas "winnaar" als hij in een afgerond kwartaal zijn eigen meetlat (even belegd) verslaat met een p-waarde van ' + getal(sp.grens_p, 4) + ' of lager (0,05 gedeeld door ' + sp.aantal + '), en dat in een later kwartaal nog een keer doet. Een keer is "kandidaat". Kas levert 0% op.' })));
+  }
+
   const kaarten = el('div', { class: 'rooster' });
   for (const pf of pfs) {
     kaarten.append(el('div', { class: 'paneel' },
       el('div', { class: 'kaart-kop' }, el('span', { class: 'stip', style: 'background:' + kleur(pf.naam) }),
-        el('strong', { text: naam(pf.naam) }), el('span', { class: 'dim klein', text: { meetlat: 'meetlat', ai: 'AI', regel: 'regels' }[pf.soort] })),
+        el('strong', { text: naam(pf.naam) }), el('span', { class: 'dim klein', text: { meetlat: 'meetlat', ai: 'AI', regel: 'regels' }[pf.soort] }),
+        pf.hoofdvraag ? el('span', { class: 'pil blauw', text: 'hoofdvraag' })
+          : pf.status === 'winnaar' ? el('span', { class: 'pil ja', text: 'winnaar' })
+          : pf.status === 'kandidaat' ? el('span', { class: 'pil wacht', text: 'kandidaat' })
+          : pf.soort === 'meetlat' ? null : el('span', { class: 'dim klein', text: 'verkennend' })),
       rij('waarde', dollar(pf.waarde)),
       rij('rendement', pct(pf.rendement_pct, 2), kleurTeken(pf.rendement_pct)),
       pf.meetlat ? rij('tegen ' + pf.meetlat, pp(pf.vs_meetlat_pp), kleurTeken(pf.vs_meetlat_pp)) : rij('tegen meetlat', 'is zelf een meetlat'),

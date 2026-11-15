@@ -29,7 +29,7 @@ from typing import Any
 import pandas as pd
 
 from bot import config as conf
-from bot import indicatoren, rapport, statistiek
+from bot import indicatoren, meting, rapport, statistiek
 from bot.ai import kalibratie
 from bot.ai.budget import Budget
 from bot.ai.kenmerken import ABSOLUUT, KAS, RELATIEF, vraagsoort
@@ -39,11 +39,11 @@ from bot.markt import Markt
 SITE_BRON = conf.PROJECT / "site"
 VAKBREEDTE = 0.05
 MIN_PER_VAK = 10
-MEETLAT_P = 0.05
 
 HOOFDVRAAG = (
-    "Kiest {ai} beter dan de gelijk verdeelde meetlat van zijn eigen symbolen ({meetlat}), "
-    "als die meetlat elke dag even veel belegd is als {ai}?"
+    "Zit er informatie in de rangorde van de AI? Doet {ai} (altijd de 10 symbolen met de grootste "
+    "voorsprong op hun basiskans) het beter dan de gelijk verdeelde meetlat van zijn eigen symbolen "
+    "({meetlat}), als die meetlat elke dag even veel belegd is?"
 )
 
 
@@ -94,32 +94,8 @@ def soort_van(naam: str, ai: set[str]) -> str:
 
 
 def eigen_meetlat(naam: str, ai: set[str], bestaand: set[str]) -> str | None:
-    """De meetlat waar een portefeuille tegen wordt afgezet op zijn scorekaart.
-
-    De AI en de regelstrategieën tegen gelijk_alle. Volgt de AI een kleinere lijst
-    (dan bestaat gelijk_ai), dan de AI en de *_ai-varianten tegen gelijk_ai.
-    De meetlatten zelf krijgen geen vergelijking.
-    """
-    if naam in rapport.MEETLATTEN:
-        return None
-    if "gelijk_ai" in bestaand and (naam in ai or naam.endswith("_ai")):
-        return "gelijk_ai"
-    return "gelijk_alle" if "gelijk_alle" in bestaand else None
-
-
-def hoofdvraag_label(laatste_data: date, einde: date, verschil_pp: float | None, p: float | None) -> str:
-    """Het eerlijke label bij de hoofdvraag.
-
-    Tot de koers van de einddatum in de data zit altijd 'nog niet te zeggen', ook
-    als de p-waarde onderweg laag is: wie elke dag kijkt en bij het eerste mooie
-    getal stopt, maakt de toets waardeloos. Daarna 'ja' of 'nee', gerekend tot en
-    met de einddatum en niet verder.
-    """
-    if laatste_data < einde:
-        return "nog niet te zeggen"
-    if verschil_pp is not None and p is not None and verschil_pp > 0 and p <= MEETLAT_P:
-        return "ja"
-    return "nee"
+    """Zie rapport.eigen_meetlat."""
+    return rapport.eigen_meetlat(naam, ai, bestaand)
 
 
 # ------------------------------------------------------------ per weergave
@@ -170,10 +146,15 @@ def _overzicht(con: sqlite3.Connection, cfg: dict, weergave: str, vandaag: date)
     m = cfg.get("meting") or {}
     ai_pf = m.get("proef_ai_portefeuille" if weergave == "proef" else "ai_portefeuille", "ai_analist")
     meetlat = eigen_meetlat(ai_pf, ai, bestaand) or "gelijk_alle"
-    einde = date.fromisoformat(str(m.get("einde", "2027-02-23")))
-    # Nooit verder rekenen dan de einddatum: na 23 februari mag de uitslag niet meer
+    einde = date.fromisoformat(str(m.get("einde", "2027-11-23")))
+    # Nooit verder rekenen dan de einddatum: daarna mag de uitslag niet meer
     # verschuiven (anders kies je achteraf een mooie dag).
     tot_vraag = min(tot, einde.isoformat())
+    stand = meting.hoofdvraag_stand(con, cfg, ai_pf, meetlat, tot, kal) if ai_pf in bestaand and meetlat in bestaand else {
+        "label": "nog niet te zeggen", "momenten": [], "volgende": None}
+    # Ook tegen alle symbolen, als extra cijfer (de hoofdvraag is tegen de eigen lijst).
+    alle = (rapport.vergelijk_even_belegd(con, ai_pf, "gelijk_alle", tot_vraag, kal)
+            if meetlat != "gelijk_alle" and ai_pf in bestaand and "gelijk_alle" in bestaand else None)
     beide = ai_pf in bestaand and meetlat in bestaand
     v = rapport.vergelijk_even_belegd(con, ai_pf, meetlat, tot_vraag, kal) if beide else None
     ruw = rapport.vergelijk(con, ai_pf, meetlat, tot_vraag, kal) if beide else None
@@ -190,6 +171,8 @@ def _overzicht(con: sqlite3.Connection, cfg: dict, weergave: str, vandaag: date)
     uit["hoofdvraag"] = {
         "vraag": HOOFDVRAAG.format(ai=ai_pf, meetlat=meetlat),
         "ai": ai_pf,
+        # De portefeuille die de kansen levert waar de hoofdvraag op draait.
+        "bron": m.get("proef_ai_bron" if weergave == "proef" else "ai_bron", ai_pf),
         "meetlat": meetlat,
         "tot": tot_vraag,
         "ai_rendement_pct": _getal(k_ai.rendement_pct, 2) if k_ai else None,
@@ -202,12 +185,31 @@ def _overzicht(con: sqlite3.Connection, cfg: dict, weergave: str, vandaag: date)
         "soort_verschil_pp": _getal(soort.verschil_pp, 2) if soort else None,
         "soort_p_waarde": _getal(soort.p_waarde, 3) if soort else None,
         "ai_kosten_pp": kosten_pp,
+        "alle_verschil_pp": _getal(alle.verschil_pp, 2) if alle else None,
+        "alle_p_waarde": _getal(alle.p_waarde, 3) if alle else None,
         "start": str(m.get("start", "")),
         "einde": einde.isoformat(),
         "dagen_tot_einde": max(0, (einde - vandaag).days),
-        "label": "telt niet mee" if weergave == "proef" else hoofdvraag_label(
-            date.fromisoformat(tot), einde, v.verschil_pp if v else None, v.p_waarde if v else None),
+        "volgend_moment": stand["volgende"],
+        "dagen_tot_moment": max(0, (date.fromisoformat(stand["volgende"]) - vandaag).days) if stand["volgende"] else None,
+        "momenten": [
+            {**x, "verschil_pp": _getal(x["verschil_pp"], 2), "p_waarde": _getal(x["p_waarde"], 4)}
+            for x in stand["momenten"]
+        ],
+        "label": "telt niet mee" if weergave == "proef" else stand["label"],
     }
+
+    # ---- de spelregels voor de verkennende portefeuilles ----
+    spel = meting.verkennend(con, cfg, tot_vraag, kal, ai_pf, ai)
+    uit["spelregels"] = {"aantal": spel["aantal"], "grens_p": _getal(spel["grens_p"], 5) if spel["grens_p"] else None}
+    for p in uit["portefeuilles"]:
+        s = spel["portefeuilles"].get(p["naam"])
+        if s:
+            lopend = s["periodes"][-1] if s["periodes"] else None
+            p["status"] = s["status"]
+            p["periode_p"] = _getal(lopend["p_waarde"], 4) if lopend else None
+            p["periode_verschil_pp"] = _getal(lopend["verschil_pp"], 2) if lopend else None
+        p["hoofdvraag"] = p["naam"] == ai_pf
 
     # ---- AI vandaag ----
     laatste = con.execute("SELECT MAX(datum) d FROM ai_besluiten").fetchone()["d"]

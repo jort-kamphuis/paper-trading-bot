@@ -133,16 +133,6 @@ def test_overzicht_scorekaarten_en_ai_vandaag(tmp_path, con, cfg, gevuld):
     assert h["label"] == "nog niet te zeggen" and h["dagen_tot_einde"] == 95
 
 
-def test_label_bij_de_hoofdvraag():
-    einde = date(2027, 2, 23)
-    voor, na = date(2027, 2, 22), date(2027, 2, 23)
-    assert dashboard.hoofdvraag_label(voor, einde, 5.0, 0.001) == "nog niet te zeggen", "niet vooruitlopen op de einddatum"
-    assert dashboard.hoofdvraag_label(na, einde, 5.0, 0.01) == "ja"
-    assert dashboard.hoofdvraag_label(na, einde, 5.0, 0.2) == "nee"
-    assert dashboard.hoofdvraag_label(na, einde, -1.0, 0.01) == "nee"
-    assert dashboard.hoofdvraag_label(na, einde, None, None) == "nee"
-
-
 def test_eigen_meetlat():
     ai = {"ai_analist", "ai_enkel"}
     alleen_alle = {"gelijk_alle", "momentum", "ai_analist"}

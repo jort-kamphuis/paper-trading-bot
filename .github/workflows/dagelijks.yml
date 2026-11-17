@@ -6,16 +6,25 @@
 #   3. de dagelijkse ronde, met een bericht naar Telegram
 #   4. de database klein maken en terugzetten in de repository
 #
+# Twee keer per nacht: de hoofdronde om 04:00 UTC en een herkansing om 08:00 UTC.
+# De herkansing doet alleen iets als de hoofdronde niet kon handelen (de koersen
+# waren er nog niet) of mislukt is. Anders stopt hij meteen, zonder bericht.
+#
 # Deze repository is openbaar, dus GitHub Actions kost hier niets.
 
 name: Dagelijkse ronde
 
 on:
   schedule:
-    # 00:30 UTC. De Amerikaanse beurs is dan dicht (ook in de zomer) en de
-    # cryptodag van gisteren is af. In Nederland is dat 01:30 (winter) of
-    # 02:30 (zomer). GitHub start geplande taken soms wat later; dat geeft niet.
-    - cron: "30 0 * * *"
+    # De hoofdronde: 04:00 UTC. De Amerikaanse beurs is dan zeven uur (zomer: acht
+    # uur) dicht, zodat de koersbron tijd heeft gehad; de cryptodag van gisteren
+    # sloot om 00:00 UTC; en de beurs gaat pas om 14:30 UTC (zomer: 13:30) weer
+    # open. In Nederland is dat 05:00 (winter) of 06:00 (zomer). GitHub start
+    # geplande taken vaak een uur later; dat geeft niet. Tot 16 november 2026 was
+    # dit 00:30 UTC; op 17 november had de koersbron de dag toen nog niet.
+    - cron: "0 4 * * *"
+    # De herkansing: 08:00 UTC. Nog steeds ruim voor de opening van de beurs.
+    - cron: "0 8 * * *"
   # Zo kun je hem ook zelf starten, via het tabblad Actions.
   workflow_dispatch:
     inputs:
@@ -47,6 +56,9 @@ jobs:
     # Een volle ronde in de proefweek (4 AI-portefeuilles op 46 symbolen) kan
     # ongeveer een uur duren. Zie ook de limiet van de ronde zelf hieronder.
     timeout-minutes: 150
+    outputs:
+      # Is er in deze run een nieuw dashboard gebouwd? Alleen dan publiceren.
+      dashboard: ${{ steps.dashboard.outcome }}
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -84,14 +96,23 @@ jobs:
           # accepteert bovendien alleen de vaste keuzes.
           WEEKRAPPORT: ${{ inputs.weekrapport || 'auto' }}
           OMSCHAKELEN: ${{ inputs.omschakelen || 'auto' }}
-        run: python scripts/dagelijks.py --telegram --weekrapport "$WEEKRAPPORT" --omschakelen "$OMSCHAKELEN"
+          # De tweede geplande ronde van de nacht is de herkansing. Een ronde die je
+          # zelf start (Run workflow) is altijd een gewone, volledige ronde.
+          HERKANSING: ${{ github.event.schedule == '0 8 * * *' && 'ja' || 'nee' }}
+          GEPLAND: ${{ github.event_name == 'schedule' && 'ja' || 'nee' }}
+        run: |
+          python scripts/dagelijks.py --telegram --weekrapport "$WEEKRAPPORT" --omschakelen "$OMSCHAKELEN" --herkansing "$HERKANSING" --gepland "$GEPLAND"
+          # Een herkansing die niets hoefde te doen, laat een briefje achter.
+          if [ -f .ronde_overgeslagen ]; then echo "overgeslagen=ja" >> "$GITHUB_OUTPUT"; fi
 
       # Het dashboard: nu bouwen, want na het bewaren is de database klein gemaakt
       # en zijn de koersen voor de grafieken weg. Gaat dit mis, dan wordt de
       # database gewoon bewaard; het dashboard blijft dan een nacht oud.
+      # Niet na een herkansing die niets hoefde te doen: die heeft geen koersen
+      # opgehaald, en dan zou het dashboard zonder grafieken worden gepubliceerd.
       - name: Dashboard bouwen
         id: dashboard
-        if: ${{ always() && steps.ronde.outcome != 'skipped' }}
+        if: ${{ always() && steps.ronde.outcome != 'skipped' && steps.ronde.outputs.overgeslagen != 'ja' }}
         continue-on-error: true
         run: python scripts/exporteer_dashboard.py --uit _site
 
@@ -152,7 +173,7 @@ jobs:
   # versie van het dashboard staan; de ronde zelf is dan al klaar en bewaard.
   dashboard:
     needs: ronde
-    if: ${{ always() && needs.ronde.result != 'cancelled' }}
+    if: ${{ always() && needs.ronde.result != 'cancelled' && needs.ronde.outputs.dashboard == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     continue-on-error: true

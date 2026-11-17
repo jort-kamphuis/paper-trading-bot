@@ -146,7 +146,7 @@ of "winnaar", met de grens erbij. Een weekrapport is een tussenstand.
 AI wordt na 14 kalenderdagen gescoord tegen wat er echt gebeurde: vanaf de
 openingskoers van de dag na de beslisdag (dan zou de bot kopen) tot de slotkoers
 14 dagen later, met dividend, en na 0,3% kosten. Vanaf het slot rekenen zou nieuws
-van na het slot, dat de AI om 00:30 UTC al ziet, laten meetellen als voorspelling.
+van na het slot, dat de AI bij de nachtronde al ziet, laten meetellen als voorspelling.
 De maat is de Brier-score (lager is beter), naast twee vergelijkingen: altijd 0,5
 zeggen (0,25) en altijd de basiskans achteraf zeggen (hoe vaak het in de
 meetperiode zelf uitkwam; dus niet het getal uit `config.yaml` dat de AI vooraf
@@ -195,6 +195,13 @@ zijn niet veranderd. Vanaf de start op 23 november verandert er niets meer aan;
 alleen echte fouten worden nog gerepareerd, en dat staat dan in de geschiedenis
 van de repository.
 
+**Op 17 november is de nachtronde verschoven**, na een nacht waarin de koersbron om
+01:42 UTC de beursdag nog niet had: de hoofdronde begint nu om 04:00 UTC in plaats
+van 00:30 UTC, er is een herkansing om 08:00 UTC, en de AI ziet nieuws tot een
+vast tijdstip (04:00 UTC; daarvoor was dat het moment waarop de ronde toevallig
+draaide, rond 01:40 UTC). Aan de regels van de portefeuilles en aan de toets is
+daarbij niets veranderd.
+
 **Tussenstanden zijn verkennend.** Weekrapporten en het dashboard tonen onderweg
 p-waarden met het woord "verkennend", nooit "betekenisvol". Wie elke week kijkt en
 bij het eerste lage getal conclusies trekt, maakt de toets waardeloos.
@@ -224,8 +231,10 @@ bij het eerste lage getal conclusies trekt, maakt de toets waardeloos.
 
 ## Automatisch draaien: wat jij eenmalig doet
 
-De bot draait elke nacht om **00:30 UTC** (01:30 in de winter, 02:30 in de
-zomer) vanzelf op GitHub. Daarvoor moet je drie dingen eenmalig regelen.
+De bot draait elke nacht om **04:00 UTC** (05:00 in de winter, 06:00 in de
+zomer) vanzelf op GitHub, met een herkansing om 08:00 UTC als de eerste ronde niet
+kon handelen (zie "Wat er elke nacht gebeurt"). Daarvoor moet je drie dingen
+eenmalig regelen.
 
 ### 1. Een Telegram-bot aanmaken
 
@@ -276,9 +285,9 @@ Of op GitHub: tabblad **Actions**, dan **Dagelijkse ronde**, dan **Run workflow*
    aandeel dat ontbreekt, wordt nog drie keer los geprobeerd.
 3. **Zijn de koersen compleet?** Ontbreekt er een symbool, mist een aandeel een
    beursdag, of halveert of verdubbelt een aandeel zonder splitsing in de data,
-   dan wordt er die nacht niet gehandeld. Je krijgt een melding en de volgende
-   nacht wordt de dag ingehaald. Liever een nacht overslaan dan stilletjes
-   handelen op een gat of een fout.
+   dan wordt er in die ronde niet gehandeld. Je krijgt een melding; de herkansing
+   van 08:00 UTC probeert het opnieuw, en anders haalt de volgende nacht de dag
+   in. Liever een ronde overslaan dan stilletjes handelen op een gat of een fout.
 4. De motor verwerkt dividend en splitsingen, voert de orders van gisteren uit,
    en de strategieën beslissen.
 5. Was het een beursdag, dan beoordeelt de AI-analist de nieuwste dag.
@@ -289,6 +298,33 @@ Of op GitHub: tabblad **Actions**, dan **Dagelijkse ronde**, dan **Run workflow*
 
 Gaat er iets mis, dan krijg je een bericht in Telegram met een link naar het
 logboek op GitHub.
+
+### Twee rondes per nacht: de hoofdronde en de herkansing
+
+* **De hoofdronde begint om 04:00 UTC.** De Amerikaanse beurs is dan zeven uur
+  dicht (in de zomer acht), de cryptodag van gisteren sloot om 00:00 UTC, en de
+  beurs gaat pas om 14:30 UTC (zomer: 13:30) weer open. GitHub start geplande
+  taken vaak een uur later; dat geeft niet.
+* **De herkansing begint om 08:00 UTC.** Heeft de hoofdronde alles gedaan, dan
+  stopt de herkansing meteen: geen koersen, geen AI, geen bericht, geen nieuw
+  dashboard. Kon de hoofdronde niet handelen (de koersen waren er nog niet), of
+  is hij mislukt of nooit gestart, dan doet de herkansing de hele ronde alsnog en
+  krijg je zijn bericht, met de vermelding dat het de herkansing is.
+* **De AI ziet in de herkansing niet meer nieuws dan anders:** de grens ligt vast
+  op 04:00 UTC.
+* Een ronde die je zelf start (Run workflow) is altijd een gewone, volledige ronde.
+
+Waarom: tot 16 november 2026 draaide de ronde om 00:30 UTC. Op 17 november had de
+koersbron (Yahoo, via yfinance) om 01:42 UTC, bijna vijf uur na het sluiten van de
+beurs, nog geen enkele koers van die dag. De bot handelde toen terecht niet, maar
+zo'n nacht kost in de echte meting een dag van de AI.
+
+**Het koerslog.** Elke ronde legt vast hoe laat hij de koersen ophaalde, welke
+beursdag af had moeten zijn, en voor hoeveel van de 38 aandelen en fondsen die dag
+er al was (`bot/koerslog.py`, tabel `koerslog`). Wanneer Yahoo een koers
+publiceert, is niet te zien; wel of hij er om ongeveer 04:00 en om ongeveer 08:00
+UTC was. Het proefweekverslag (`scripts/proefweek_verslag.py`) toont het log. Zo
+is na een paar weken te zien of 17 november een incident was of een patroon.
 
 ### Vanaf nu lokaal alleen kijken
 
@@ -400,7 +436,7 @@ de koopdrempels haalden, en wat een symbool per dag kost, met een maandschatting
 voor 15, 30 en 46 symbolen. De lijst voor de echte meting is op 15 november
 vastgelegd op 30 symbolen (zie "Wat er gevolgd wordt").
 
-**Op 24 november schakelt de bot vanzelf om.** De ronde van 00:30 UTC die nacht
+**Op 24 november schakelt de bot vanzelf om.** De ronde van 04:00 UTC die nacht
 verwerkt maandag 23 november: die dag begint de echte meting (alle
 portefeuilles tegelijk, met de correctie van $0,23), met de normale
 instellingen, en dat meldt hij in Telegram. Wil je het eerder, dan doet dit ene
@@ -416,7 +452,7 @@ commando het (op GitHub, niet op je laptop):
 
 ### Het weekrapport
 
-Elke zondagnacht (in de ronde van 00:30 UTC) krijg je in Telegram het weekrapport.
+Elke zondagnacht (in de ronde van 04:00 UTC) krijg je in Telegram het weekrapport.
 Per strategie:
 
 * het rendement, totaal en deze week;
@@ -762,7 +798,10 @@ Een instructie aan een model is een verzoek. Deze dingen zijn regels in de code:
 
 De AI-analist ziet alleen koppen die vóór het moment van uitvoeren zijn
 gepubliceerd (crypto: middernacht UTC, aandelen: uiterlijk de opening van de
-volgende beursdag). yfinance geeft alleen de nieuwste berichten per symbool en
+volgende beursdag). Daarbovenop geldt een **vaste grens: 04:00 UTC** op de dag van
+de ronde (`ai.nieuwsgrens_utc` in `config.yaml`). Zo ziet de AI elke nacht even
+veel nieuws, ook als GitHub de ronde een uur later start, en ook in de herkansing
+van 08:00 UTC. yfinance geeft alleen de nieuwste berichten per symbool en
 er is geen nieuwsgeschiedenis. Daarom:
 
 * doet de AI-analist **niet mee in de backtest**;
@@ -907,6 +946,7 @@ paper-trading-bot/
 │   ├── tekst.py             Nederlandse notatie van getallen en datums
 │   ├── telegram.py          berichten naar Telegram, en je antwoorden lezen
 │   ├── volledigheid.py      zijn de koersen compleet genoeg om te handelen?
+│   ├── koerslog.py          waren de koersen er al toen de ronde ze ophaalde?
 │   ├── rapport.py           de cijfers van het weekrapport
 │   ├── meting.py            de meetmomenten van de hoofdvraag en de spelregels
 │   ├── weekrapport.py       het hele weekrapport
@@ -942,7 +982,7 @@ paper-trading-bot/
 │   ├── zet_github_secrets.py  sleutels uit .env naar GitHub Secrets
 │   ├── slank_maken.py       database klein maken voor git (door GitHub)
 │   └── meld_fout.py         foutmelding naar Telegram (door GitHub)
-└── tests/                   422 tests
+└── tests/                   438 tests
 ```
 
 ### Op de lijst

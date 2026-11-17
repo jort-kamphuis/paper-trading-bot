@@ -129,6 +129,14 @@ def verslag(con: sqlite3.Connection, regels_cfg: dict | None = None) -> str:
     for r in kosten:
         uit.append(f"  {r['rol']:10s} {r['model']:20s} ${getal(float(r['usd'] or 0), 3)}")
     uit.append("")
+    # Waren de koersen er al toen de ronde ze ophaalde? (bot/koerslog.py)
+    from bot import koerslog
+
+    log = koerslog.samenvatting(con)
+    if log:
+        uit.append("")
+        uit.extend(log)
+        uit.append("")
     uit.append("Nep-geld. Dit verslag verandert niets; de keuzes maak jij.")
     return "\n".join(uit)
 

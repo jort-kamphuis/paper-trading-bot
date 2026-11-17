@@ -60,6 +60,22 @@ class Uitkomst:
         return self.gestopt is None and not self.fouten and not self.onbruikbaar
 
 
+def vaste_nieuwsgrens(cfg: dict, nu: datetime | None = None) -> str:
+    """Het vaste tijdstip tot waar de AI in deze ronde nieuws mag zien.
+
+    De hoofdronde begint om 04:00 UTC, de herkansing rond 08:00 UTC, en GitHub
+    start soms later. Zonder vaste grens zou de AI de ene nacht meer nieuws zien dan
+    de andere, en in een herkansing uren meer. Daarom: nooit later dan het tijdstip
+    uit config.yaml (ai.nieuwsgrens_utc) op de dag van de ronde. Draait een ronde
+    voor dat tijdstip (met de hand), dan is 'nu' de grens: nieuws uit de toekomst
+    bestaat niet.
+    """
+    nu = (nu or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    uur, minuut = (int(x) for x in str((cfg.get("ai") or {}).get("nieuwsgrens_utc", "04:00")).split(":"))
+    grens = nu.replace(hour=uur, minute=minuut, second=0, microsecond=0)
+    return min(nu, grens).isoformat()
+
+
 def nieuws_grens(symbool: str, datum: str, nu: datetime | None = None) -> str:
     """Tot welk moment de AI nieuws mag zien voor een besluit over 'datum'.
 

@@ -25,3 +25,4 @@ data/*.db-journal
 
 # Het dashboard wordt elke nacht opnieuw gebouwd en via GitHub Pages gepubliceerd.
 _site/
+.ronde_overgeslagen

@@ -232,8 +232,17 @@ def maak(
         meting.verkennend(con, cfg, tot, kal, hoofd, _dash.ai_namen(con, cfg))
     )
 
+    # ---- 7. het gratis tegoed: wat is er bekend, en wanneer verloopt het? ----
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+
+    from bot import tegoed
+
+    tegoed_tekst = tegoed.als_tekst(con, cfg, _dt.now(_tz.utc).date())
+
     tekst = "\n\n".join(
         d for d in [cijfers_tekst, proef_tekst, kalibratie_tekst, spel_tekst, "\n".join(ai_regels), kosten,
+                    tegoed_tekst,
                     "Nep-geld, geen beleggingsadvies."] if d
     )
 

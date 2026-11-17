@@ -170,6 +170,7 @@ PROEF_NAAR_ECHT = {
     "proef_ai_mix": "ai_analist",
     "proef_ai_haiku": "ai_controle_haiku",
     "proef_ai_enkel": "ai_enkel",
+    "proef_ai_opus": "ai_opus",
 }
 
 
@@ -290,17 +291,17 @@ def bedrag_als_tekst(b: MetingBedrag, cfg: dict, marge_pct: float = 20.0) -> str
         f"Totaal: {dollar(b.totaal_usd)}. Met {getal(marge_pct, 0)}% marge: "
         f"{dollar(b.totaal_usd * (1 + marge_pct / 100.0))}."
     )
-    # Kopen gaat per kwartaal, niet het hele jaar in een keer.
+    # Per kwartaal, voor wie zelf credits koopt (als er geen gratis tegoed meer is).
     from bot import meting as _meting
 
     kwartalen = len(_meting.momenten(cfg)) or 1
     if kwartalen > 1:
         per = b.totaal_usd / kwartalen
         regels.append(
-            f"KOOP PER KWARTAAL ({kwartalen} kwartalen): ongeveer {dollar(per)}, "
+            f"Per kwartaal ({kwartalen} kwartalen): ongeveer {dollar(per)}, "
             f"met {getal(marge_pct, 0)}% marge {dollar(per * (1 + marge_pct / 100.0))}. "
-            f"Twee weken voor elk meetmoment herinnert de bot je aan het volgende kwartaal; "
-            f"is het tegoed toch op, dan meldt de bot dat in Telegram."
+            f"Kopen is alleen nodig als er geen gratis tegoed meer is; is het tegoed op, "
+            f"dan meldt de bot dat in Telegram."
         )
     # Het budget in de bot telt per maand van de ronde. Toets op de zwaarste maand,
     # niet op het gemiddelde: december heeft meer AI-nachten dan februari.

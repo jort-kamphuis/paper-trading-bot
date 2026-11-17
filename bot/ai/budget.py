@@ -61,10 +61,14 @@ class Budget:
         self.con = con
         self.prijzen = cfg["prijzen"]
         instellingen = cfg["ai"]["budget"]
-        self.max_usd = float(instellingen["max_usd_per_maand"])
         self.waarschuw_onder = float(instellingen["waarschuw_onder_usd"])
         self.maand = huidige_maand(vandaag)
         self.vandaag = vandaag or date.today().isoformat()
+        # Het maandbudget hangt af van het gratis tegoed (bot/tegoed.py): zonder geldig
+        # gratis tegoed geldt het lagere bedrag uit de instellingen.
+        from bot import tegoed
+
+        self.max_usd = tegoed.budget_plafond(con, cfg, date.fromisoformat(self.vandaag[:10]))
 
     # ---------- stand ----------
 

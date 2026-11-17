@@ -6,9 +6,10 @@
 # kosten, foutafhandeling, weekrapport, akkoordroute) voordat de echte meting
 # begint. Niets hiervan telt mee in de echte meting.
 #
-# Het gratis API-tegoed (100 dollar) verloopt op 20 november 2026 om 00:00 UTC.
-# Opus draait daarom alleen tot en met 19 november. De proefrondes daarna
-# (20 en 21 november, zonder Opus) gebruiken de credits die je zelf bijzet.
+# Het eerste gratis API-tegoed (100 dollar) verloopt op 20 november 2026 om 00:00
+# UTC. Op 17 november kwam er een tweede bij, geldig tot 20 december. Opus draait
+# daarom tot het eind van de proefweek mee: in de echte meting loopt hij ook mee
+# (ai_opus), dus zo testen de proefnachten precies de echte opzet.
 
 proefweek:
   # De laatste UTC-datum waarop een ronde als proefronde draait. De ronde van
@@ -33,15 +34,17 @@ proefweek:
     nieuwe_waarde: 120
 
   herinnering:
-    datum: "2026-11-18"
+    # De eerdere herinnering ("koop voor 20 november") is achterhaald: op 17
+    # november kwam er nieuw gratis tegoed bij. Deze versie gaat een keer uit, op
+    # 19 november.
+    datum: "2026-11-19"
     tekst: >-
-      Herinnering: koop voor 20 november de credits voor het eerste kwartaal
-      in de Anthropic-console, met automatisch opwaarderen uit. Je gratis tegoed
-      verloopt op 20 november om 00:00 UTC. De meting duurt 12 maanden en je
-      koopt per kwartaal, niet het hele jaar in een keer; het bedrag per kwartaal
-      staat hieronder. Twee weken voor elk meetmoment herinnert de bot je aan
-      het volgende kwartaal. De proefrondes van 20 en 21 november (zonder Opus)
-      gebruiken deze credits ook al; reken daar een paar dollar extra voor.
+      Anders dan eerder afgesproken: credits kopen hoeft niet voor 20
+      november. Er is nieuw gratis tegoed van 100 dollar, geldig tot 20
+      december 2026 om 00:00 UTC. Kopen is pas nodig voor 20 december, en alleen
+      als het gratis tegoed dan niet is teruggekomen. Vijf dagen van tevoren
+      herinnert de bot je eraan in de console te kijken. Automatisch opwaarderen
+      blijft uit. Ter informatie staat hieronder wat de meting kost.
     # De marge bovenop het berekende bedrag, in procenten.
     marge_pct: 20
 
@@ -57,9 +60,9 @@ proefweek:
 ai:
   # Vier AI-portefeuilles. 'model' zet alle rollen op dat ene model; zonder
   # 'model' gelden de rollen uit config.yaml (de instellingen van de echte
-  # meting). 'tot_en_met': na die UTC-datum doet de portefeuille niet meer mee.
+  # meting). 'tot_en_met' zou een portefeuille na die UTC-datum laten stoppen.
   portefeuilles:
-    - {naam: proef_ai_opus,  soort: debat, model: claude-opus-5-5, tot_en_met: "2026-11-19"}
+    - {naam: proef_ai_opus,  soort: debat, model: claude-opus-5-5}   # zoals ai_opus
     - {naam: proef_ai_mix,   soort: debat}                            # zoals ai_analist
     - {naam: proef_ai_haiku, soort: debat, model: claude-haiku-5-5}   # zoals ai_controle_haiku
     - {naam: proef_ai_enkel, soort: enkel}                            # zoals ai_enkel
@@ -69,6 +72,7 @@ ai:
     - {naam: proef_ai_rangorde,           soort: rangorde,           bron: proef_ai_mix}
     - {naam: proef_ai_rangorde_omgekeerd, soort: rangorde_omgekeerd, bron: proef_ai_mix}
     - {naam: proef_ai_consensus,          soort: consensus,          bronnen: [proef_ai_mix, proef_ai_enkel, proef_ai_haiku]}
+    - {naam: proef_ai_opus_rangorde,      soort: rangorde,           bron: proef_ai_opus}
 
   # Opus 5.5 kan zijn denkwerk niet uitzetten. Met een krap plafond worden de
   # antwoorden dan afgekapt, dus in de proefweek krijgt elke rol ruimte. Een

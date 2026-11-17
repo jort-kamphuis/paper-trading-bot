@@ -346,7 +346,8 @@ def test_herbevestiging_wordt_opgeslagen(con, cfg):
 
 def test_afgeleide_portefeuilles_uit_de_instellingen():
     namen = {p["naam"]: p for p in afgeleid.afgeleide_portefeuilles(ECHT)}
-    assert set(namen) == {"ai_rangorde", "ai_rangorde_omgekeerd", "ai_consensus"}
+    assert set(namen) == {"ai_rangorde", "ai_rangorde_omgekeerd", "ai_consensus", "ai_opus_rangorde"}
+    assert namen["ai_opus_rangorde"]["soort"] == "rangorde" and namen["ai_opus_rangorde"]["bronnen"] == ["ai_opus"]
     assert namen["ai_rangorde"]["bronnen"] == ["ai_analist"] == namen["ai_rangorde_omgekeerd"]["bronnen"]
     assert namen["ai_consensus"]["bronnen"] == ["ai_analist", "ai_enkel", "ai_controle_haiku"]
     # De bronnen zijn echte AI-portefeuilles, en de hoofdvraag wijst naar de rangorde.
@@ -364,7 +365,9 @@ def test_afgeleide_portefeuilles_in_de_proefweek():
                        omgeschakeld=False)
     assert proef["modus"] == "proefweek"
     namen = {p["naam"]: p for p in afgeleid.afgeleide_portefeuilles(proef)}
-    assert set(namen) == {"proef_ai_rangorde", "proef_ai_rangorde_omgekeerd", "proef_ai_consensus"}
+    assert set(namen) == {"proef_ai_rangorde", "proef_ai_rangorde_omgekeerd", "proef_ai_consensus",
+                          "proef_ai_opus_rangorde"}
+    assert namen["proef_ai_opus_rangorde"]["bronnen"] == ["proef_ai_opus"]
     echte = {p["naam"] for p in ronde_mod.ai_portefeuilles(proef, vandaag=date(2026, 11, 17))}
     assert all(set(p["bronnen"]) <= echte for p in namen.values())
     assert proef["meting"]["proef_ai_portefeuille"] == "proef_ai_rangorde"

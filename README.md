@@ -123,8 +123,8 @@ Waarom verder zo, en niet anders (review november 2026):
 ### Spelregels voor al het andere
 
 Alles naast de hoofdvraag is **verkennend**: de regelstrategieën, `ai_analist`,
-het Haiku-controlepotje, `ai_enkel`, `ai_rangorde_omgekeerd`, `ai_consensus`, de
-meetlatten SPY en BTC, de weekrapporten. Met zoveel portefeuilles haalt er door
+het Haiku-controlepotje, `ai_enkel`, `ai_opus`, `ai_rangorde_omgekeerd`,
+`ai_consensus`, `ai_opus_rangorde`, de meetlatten SPY en BTC, de weekrapporten. Met zoveel portefeuilles haalt er door
 toeval altijd wel een de grens van 0,05. Daarom, vooraf vastgelegd:
 
 * Een portefeuille telt alleen als **winnaar** als hij zijn eigen meetlat (even
@@ -201,6 +201,15 @@ van 00:30 UTC, er is een herkansing om 08:00 UTC, en de AI ziet nieuws tot een
 vast tijdstip (04:00 UTC; daarvoor was dat het moment waarop de ronde toevallig
 draaide, rond 01:40 UTC). Aan de regels van de portefeuilles en aan de toets is
 daarbij niets veranderd.
+
+**Ook op 17 november, nog voor de start:** er kwam nieuw gratis API-tegoed bij
+(100 dollar, geldig tot 20 december 2026). Daarom lopen er twee verkennende
+portefeuilles extra mee: `ai_opus` (hetzelfde debat, dezelfde 30 symbolen en
+dezelfde prompt, alle rollen op Opus 5.5) en `ai_opus_rangorde` (de rangorde op
+zijn kansen). Het AI-budget is $75 per maand zolang er gratis tegoed is, en valt
+anders terug naar $35 (zie "Kosten"). De hoofdvraag is niet veranderd: `ai_rangorde`
+op de kansen van `ai_analist`, 30 symbolen. De twee nieuwe portefeuilles tellen mee
+in het aantal van de spelregels, dus de grens voor een winnaar wordt strenger.
 
 **Tussenstanden zijn verkennend.** Weekrapporten en het dashboard tonen onderweg
 p-waarden met het woord "verkennend", nooit "betekenisvol". Wie elke week kijkt en
@@ -399,27 +408,29 @@ niets telt mee.
 * **Elk Telegram-bericht** begint met `[PROEFWEEK, telt niet mee]`.
 * **Vier AI-portefeuilles op de 30 symbolen van de AI-lijst** (tot en met 15
   november op alle 46), met precies de code van de echte meting:
-  * `proef_ai_opus`: alles op Opus 5.5, alleen tot en met 19 november (zolang
-    het gratis tegoed loopt, dat op 20 november om 00:00 UTC verloopt);
+  * `proef_ai_opus`: alles op Opus 5.5, zoals `ai_opus` in de echte meting. Eerst
+    alleen tot en met 19 november gepland; sinds er op 17 november nieuw gratis
+    tegoed kwam, draait hij tot het eind van de proefweek mee;
   * `proef_ai_mix`, `proef_ai_haiku` en `proef_ai_enkel`: dezelfde opzet als
     `ai_analist`, `ai_controle_haiku` en `ai_enkel` in de echte meting. Zo meet
     je vooraf wat die kosten.
-* **Drie afgeleide portefeuilles** zonder API-kosten, zoals in de echte meting:
+* **Vier afgeleide portefeuilles** zonder API-kosten, zoals in de echte meting:
   `proef_ai_rangorde`, `proef_ai_rangorde_omgekeerd` (allebei op de kansen van
-  `proef_ai_mix`) en `proef_ai_consensus` (mix, enkel en Haiku).
-* **Budget:** $90 voor de proefweek. De rondes van 20 en 21 november draaien
-  zonder Opus, op de credits die je zelf bijzet.
+  `proef_ai_mix`), `proef_ai_consensus` (mix, enkel en Haiku) en
+  `proef_ai_opus_rangorde` (op de kansen van `proef_ai_opus`).
+* **Budget:** $90 voor de proefweek.
 * **De akkoordroute als test:** zondag het weekrapport (met een testvoorstel als
   Claude niets voorstelt), woensdag 18 november een extra rapport waarin de
   proef wordt beoordeeld. Dan krijg je `/akkoord` of `/afwijzen` te zien. Een
   akkoord wordt helemaal verwerkt en gemarkeerd als proefweek.
-* **18 november:** een herinnering in Telegram om de credits voor het eerste
-  kwartaal te kopen, met automatisch opwaarderen uit. Kopen gaat per kwartaal,
-  niet het hele jaar in één keer. De bot rekent het bedrag zelf uit: de gemeten
-  kosten per symbool per dag van de proefnachten, maal de AI-lijst (30), maal de
-  252 beursdagen van de meting, plus de weekrapporten; dat totaal gedeeld door
-  vier, met en zonder 20% marge. Het proefweekverslag laat het ook zien voor 15,
-  30 en 46 symbolen.
+* **19 november:** een herinnering in Telegram over de credits. Het eerdere plan
+  (voor 20 november kopen) is achterhaald door het nieuwe gratis tegoed. De
+  herinnering zegt nu: kopen is pas nodig voor 20 december,
+  en alleen als het gratis tegoed dan niet is teruggekomen. De bot rekent erbij
+  uit wat de meting kost: de gemeten kosten per symbool per dag van de
+  proefnachten, maal de AI-lijst (30), maal de 252 beursdagen van de meting, plus
+  de weekrapporten, ook per kwartaal en met 20% marge. Het proefweekverslag laat
+  het ook zien voor 15, 30 en 46 symbolen.
 
 Bekijken:
 
@@ -751,9 +762,9 @@ Bull, bear en risk manager zien ook zelf de nieuwskoppen, niet alleen de
 samenvatting. Alles wordt bewaard in de tabel `ai_besluiten`: de kengetallen,
 wat elke rol zei, en **welke nieuwskoppen de AI zag, met hun publicatietijd**.
 
-### Zes AI-portefeuilles
+### Acht AI-portefeuilles
 
-Drie vragen de AI elke nacht om kansen (en kosten dus API-geld):
+Vier vragen de AI elke nacht om kansen (en kosten dus API-geld):
 
 * **`ai_analist`**: zoals hierboven. Levert de kansen voor de hoofdvraag, en
   handelt zelf volgens de beslisregel (kopen vanaf 0,55). Verkennend.
@@ -761,9 +772,15 @@ Drie vragen de AI elke nacht om kansen (en kosten dus API-geld):
   model. Is het duurdere model zijn geld waard?
 * **`ai_enkel`**: een enkele aanroep (Sonnet) die alles zelf afweegt, zonder
   debat. Voegt het debat iets toe?
+* **`ai_opus`** (sinds 17 november): hetzelfde debat, dezelfde 30 symbolen en
+  dezelfde prompt, maar alle rollen op Opus 5.5, het sterkste van de drie
+  modellen. Is dat zijn geld waard? Opus is veruit de duurste (in de proefweek
+  ongeveer $0,06 per symbool per dag, tegen $0,02 voor `ai_analist`). Hij draait
+  daarom alleen zolang er gratis tegoed is, en valt als eerste af als het budget
+  krap wordt.
 
-Drie zijn **afgeleid**: ze handelen op de kansen die er die nacht al zijn en
-roepen de API niet aan (`bot/ai/afgeleid.py`). Voor alle drie: 10% per positie,
+Vier zijn **afgeleid**: ze handelen op de kansen die er die nacht al zijn en
+roepen de API niet aan (`bot/ai/afgeleid.py`). Voor alle vier: 10% per positie,
 hooguit 10 posities, hooguit 2 crypto, en wisselen alleen na de houdtijd van 14
 kalenderdagen.
 
@@ -778,6 +795,8 @@ kalenderdagen.
 * **`ai_consensus`**: koopt alleen wat `ai_analist`, `ai_enkel` en
   `ai_controle_haiku` alle drie boven de basiskans zetten (precies op de
   basiskans telt niet). Niet altijd belegd.
+* **`ai_opus_rangorde`** (sinds 17 november): dezelfde regels als `ai_rangorde`,
+  maar op de kansen van `ai_opus`. Draait `ai_opus` niet, dan verandert hier niets.
 
 In een nacht waarin een bron niet alle symbolen kon beoordelen, doen de afgeleide
 portefeuilles niets: de rangorde zou dan scheef zijn naar wat toevallig wel
@@ -811,21 +830,40 @@ er is geen nieuwsgeschiedenis. Daarom:
 
 ### Kosten
 
-Het budget staat in `config.yaml` op **$35 per maand**. De credits koop je zelf,
-**per kwartaal**, met automatisch opwaarderen uit: het tegoed zelf is de noodrem.
-Het bedrag voor het eerste kwartaal komt uit de gemeten kosten van de proefnachten
-(zie de proefweek). Twee weken voor het meetmoment van 23 februari, 23 mei en 23
-augustus 2027 stuurt de bot een herinnering voor het volgende kwartaal, met het
-bedrag uit de kosten die dan echt gemeten zijn, plus 20% marge. Is het tegoed toch
-op, dan meldt de bot dat in Telegram; in zo'n nacht doen de afgeleide
-portefeuilles niets. De afgeleide portefeuilles (`ai_rangorde`,
-`ai_rangorde_omgekeerd`, `ai_consensus`) kosten zelf niets extra.
+Het budget staat in `config.yaml` op **$75 per maand zolang er gratis tegoed
+is**, en anders op **$35 per maand**. Automatisch opwaarderen staat uit: het tegoed
+zelf is de noodrem. Is het tegoed op, dan meldt de bot dat in Telegram; in zo'n
+nacht doen de afgeleide portefeuilles niets. De afgeleide portefeuilles kosten zelf
+niets extra.
+
+**Het gratis tegoed.** Anthropic gaf twee keer 100 dollar gratis tegoed: op 13
+november (geldig tot 20 november) en op 17 november (geldig tot 20 december 2026).
+Of dat elke maand terugkomt, is niet bekend. De bot kan het saldo niet zelf
+opvragen; wat hij weet, staat in `config.yaml` onder `tegoed`, met de hand
+overgenomen uit de console.
+
+* Zolang er volgens `config.yaml` geldig gratis tegoed is: budget $75, en `ai_opus`
+  draait mee.
+* Is het laatste bekende tegoed verlopen en is er geen nieuw ingevoerd: het budget
+  valt terug naar $35 per maand, `ai_opus` doet niet meer mee, en `ai_analist`
+  loopt door. Wat in dezelfde maand al was uitgegeven terwijl het tegoed nog
+  geldig was, telt niet mee in die $35. Je krijgt daar een melding van in Telegram.
+* Vijf dagen voor het verlopen stuurt de bot een herinnering: kijk in de console
+  of er nieuw tegoed is. Zo ja, dan komt er een regel bij in `config.yaml`. Zo
+  nee, dan is credits kopen pas dan nodig.
+* Het weekrapport laat zien welk tegoed er bekend is, wanneer het verloopt, wat
+  de bot sindsdien heeft geboekt en wat er naar schatting over is. Dat is een
+  schatting: de bot telt alleen zijn eigen uitgaven in deze database.
+
+Twee weken voor het meetmoment van 23 februari, 23 mei en 23 augustus 2027 stuurt
+de bot daarnaast een herinnering om het tegoed voor het volgende kwartaal te
+controleren, met het bedrag uit de kosten die dan echt gemeten zijn, plus 20% marge.
 
 Het budget telt per maand, en december heeft de meeste AI-nachten (22). Wordt het
-in een maand krap, dan stoppen eerst `ai_controle_haiku` en `ai_enkel`: de bot
-houdt genoeg over om `ai_analist`, die de kansen voor de hoofdvraag levert, de
-maand te laten afmaken. Na de einddatum (23 november 2027) beoordeelt de AI niets
-meer; de posities lopen dan af na hun houdtijd.
+in een maand krap, dan stoppen eerst de bijportefeuilles, de duurste (`ai_opus`)
+het eerst: de bot houdt genoeg over om `ai_analist`, die de kansen voor de
+hoofdvraag levert, de maand te laten afmaken. Na de einddatum (23 november 2027)
+beoordeelt de AI niets meer; de posities lopen dan af na hun houdtijd.
 
 * **Nooit twee keer betalen.** Een beoordeling die al bestaat, wordt niet opnieuw
   gevraagd. Draait het script twee keer op een dag, dan kost de tweede keer niets.
@@ -947,6 +985,7 @@ paper-trading-bot/
 │   ├── telegram.py          berichten naar Telegram, en je antwoorden lezen
 │   ├── volledigheid.py      zijn de koersen compleet genoeg om te handelen?
 │   ├── koerslog.py          waren de koersen er al toen de ronde ze ophaalde?
+│   ├── tegoed.py            het gratis API-tegoed en het budget dat ervan afhangt
 │   ├── rapport.py           de cijfers van het weekrapport
 │   ├── meting.py            de meetmomenten van de hoofdvraag en de spelregels
 │   ├── weekrapport.py       het hele weekrapport
@@ -982,7 +1021,7 @@ paper-trading-bot/
 │   ├── zet_github_secrets.py  sleutels uit .env naar GitHub Secrets
 │   ├── slank_maken.py       database klein maken voor git (door GitHub)
 │   └── meld_fout.py         foutmelding naar Telegram (door GitHub)
-└── tests/                   438 tests
+└── tests/                   460 tests
 ```
 
 ### Op de lijst

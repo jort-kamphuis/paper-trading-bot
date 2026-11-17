@@ -173,8 +173,8 @@ def credits_herinnering(con: sqlite3.Connection, cfg: dict, vandaag: date) -> st
         database.zet_instelling(con, sleutel, "verstuurd")
         tekst = (
             f"Herinnering: op {datum_lang(moment['datum'])} begint het volgende kwartaal van de meting. "
-            f"Koop voor die tijd de credits voor dat kwartaal in de Anthropic-console, met automatisch "
-            f"opwaarderen uit."
+            f"Kijk in de Anthropic-console hoeveel tegoed er nog is (gratis of gekocht) en vul zo nodig aan "
+            f"voor dat kwartaal, met automatisch opwaarderen uit."
         )
         prognose = maak_prognose(con, cfg)
         if prognose.maand_usd is not None:

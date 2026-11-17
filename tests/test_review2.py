@@ -342,7 +342,7 @@ def test_bedrag_voor_de_hele_meting_uit_gemeten_kosten(con):
             _proefkosten(con, "proef_ai_mix", s, dag, 0.020)
             _proefkosten(con, "proef_ai_haiku", s, dag, 0.001)
             _proefkosten(con, "proef_ai_enkel", s, dag, 0.006)
-            _proefkosten(con, "proef_ai_opus", s, dag, 0.900)  # telt niet mee: geen deel van de echte meting
+            _proefkosten(con, "proef_ai_opus", s, dag, 0.060)  # telt mee: ai_opus loopt mee in de echte meting
     con.execute("INSERT INTO ai_kosten (datum, maand, rol, model, tokens_in, tokens_uit, kosten_usd) "
                 "VALUES ('2026-11-15', '2026-11', 'rapport', 'm', 0, 0, 0.10)")
     con.commit()
@@ -350,12 +350,15 @@ def test_bedrag_voor_de_hele_meting_uit_gemeten_kosten(con):
     assert b.symbolen == 15 and b.beursdagen == 252 and b.rondes == 2
     assert b.per_portefeuille["ai_analist"] == pytest.approx(0.020 * 15 * 252)
     assert b.rapporten_usd == pytest.approx(0.10 * 52)
-    assert b.totaal_usd == pytest.approx((0.020 + 0.001 + 0.006) * 15 * 252 + 5.20)
+    assert b.per_portefeuille["ai_opus"] == pytest.approx(0.060 * 15 * 252)
+    assert b.totaal_usd == pytest.approx((0.020 + 0.001 + 0.006 + 0.060) * 15 * 252 + 5.20)
     tekst = kostenprognose.bedrag_als_tekst(b, cfg, marge_pct=20)
     assert "15 symbolen" in tekst and "252 beursdagen" in tekst
-    assert "Totaal: $107,26. Met 20% marge: $128,71." in tekst
-    # 12 maanden: ook het bedrag per kwartaal, voor wie per kwartaal koopt.
-    assert "KOOP PER KWARTAAL (4 kwartalen): ongeveer $26,8" in tekst and "met 20% marge $32,18." in tekst
+    assert "ai_opus: $0,0600 per symbool per dag" in tekst
+    assert "Totaal: $334,06. Met 20% marge: $400,87." in tekst
+    # 12 maanden: ook het bedrag per kwartaal, voor wie zelf credits koopt.
+    assert "Per kwartaal (4 kwartalen): ongeveer $83,5" in tekst and "met 20% marge $100,22." in tekst
+    assert "Kopen is alleen nodig als er geen gratis tegoed meer is" in tekst
     # Voor een ander aantal symbolen (het proefweekverslag).
     assert kostenprognose.bedrag_hele_meting(con, cfg, symbolen=46).per_portefeuille["ai_analist"] == pytest.approx(0.020 * 46 * 252)
 
@@ -372,8 +375,8 @@ def test_waarschuwing_als_het_niet_in_het_maandbudget_past(con):
     from bot.ai import kostenprognose
 
     for s in ("AAA", "BBB"):
-        _proefkosten(con, "proef_ai_mix", s, "2026-11-13", 0.08)  # 30 symbolen x 22 nachten = $52,80
+        _proefkosten(con, "proef_ai_mix", s, "2026-11-13", 0.12)  # 30 symbolen x 22 nachten = $79,20
     con.commit()
     tekst = kostenprognose.bedrag_als_tekst(kostenprognose.bedrag_hele_meting(con, ECHT), ECHT)
-    assert "LET OP: dat past niet" in tekst
-    assert "nog geen gemeten kosten voor ai_controle_haiku, ai_enkel" in tekst
+    assert "LET OP: dat past niet" in tekst and "het budget in de bot staat op $75,00 per maand" in tekst
+    assert "nog geen gemeten kosten voor ai_controle_haiku, ai_enkel, ai_opus" in tekst

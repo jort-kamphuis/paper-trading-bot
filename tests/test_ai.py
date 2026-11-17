@@ -310,10 +310,16 @@ def test_hoofdportefeuille_gebruikt_de_modellen_per_rol(con, cfg_ai, markt_en_da
     assert per_rol == {r: cfg_ai["ai"]["rollen"][r] for r in ("nieuws", "bull", "bear", "risk")}
 
 
-def test_drie_ai_portefeuilles_in_de_echte_meting(cfg_ai):
-    namen = {p["naam"]: p for p in ai_portefeuilles(cfg_ai)}
-    assert set(namen) == {"ai_analist", "ai_controle_haiku", "ai_enkel"}
+def test_vier_ai_portefeuilles_in_de_echte_meting(cfg_ai):
+    lijst = ai_portefeuilles(cfg_ai)
+    namen = {p["naam"]: p for p in lijst}
+    assert [p["naam"] for p in lijst] == ["ai_analist", "ai_controle_haiku", "ai_enkel", "ai_opus"], (
+        "ai_analist eerst (die loopt altijd door), de duurste (ai_opus) achteraan")
     assert namen["ai_enkel"]["soort"] == "enkel"
+    # ai_opus: hetzelfde debat, alle rollen op Opus 5.5, en alleen zolang er gratis tegoed is.
+    assert namen["ai_opus"] == {"naam": "ai_opus", "soort": "debat", "model": "claude-opus-5-5",
+                                "alleen_met_gratis_tegoed": True}
+    assert not any(p["alleen_met_gratis_tegoed"] for p in lijst if p["naam"] != "ai_opus")
 
 
 def test_portefeuille_met_einddatum_stopt_daarna(cfg_ai):
@@ -510,6 +516,7 @@ def test_past_niet_geeft_voorstellen_en_verandert_niets(con, cfg_ai):
     from bot.ai.kostenprognose import als_tekst, maak_prognose
 
     cfg_ai["ai_watchlist"] = ["AAA", "BBB", "CCC"]
+    cfg_ai["ai"]["budget"]["max_usd_per_maand"] = 35.0
     for dag in ("2026-11-11", "2026-11-12", "2026-11-13"):
         for s in ("AAA", "BBB", "CCC"):
             _besluit_rij(con, "ai_analist", s, dag, 0.60)

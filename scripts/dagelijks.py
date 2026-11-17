@@ -181,11 +181,24 @@ def _ai_ronde(
     if voorbij:
         print(f"De meting liep tot en met {meting['einde']}: de AI beoordeelt niets meer.")
         bericht.append(f"AI gestopt: de meting liep tot en met {meting['einde']}.")
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+
+    from bot import tegoed
+
+    vandaag_tegoed = _dt.now(_tz.utc).date()
     for p in portefeuilles:
         naam = p["naam"]
         print(f"\n  {naam} ({p['soort']}" + (f", alles op {p['model']})" if p["model"] else ")"))
         te_beoordelen = [] if voorbij else symbolen
-        if echt and not voorbij and naam != hoofd:
+        if not voorbij and not tegoed.mag_draaien(cfg, p, vandaag_tegoed):
+            # Deze portefeuille (ai_opus) draait alleen op gratis tegoed. Dat is volgens
+            # config.yaml verlopen: niet beoordelen, niets betalen.
+            te_beoordelen = []
+            tekst = f"{naam} overgeslagen: er is volgens config.yaml geen geldig gratis tegoed."
+            print(f"    {tekst}")
+            bericht.append(tekst)
+        elif echt and not voorbij and naam != hoofd:
             # Reserve voor de hoofdvraag: een bijportefeuille draait alleen als er
             # daarna genoeg budget over is om de hoofd-AI de maand te laten afmaken.
             reserve = budget.reserve_voor(hoofd, datum, cfg)
@@ -260,7 +273,7 @@ def _ai_ronde(
 
 
 # De proefportefeuilles die precies zo werken als de echte meting.
-PROEF_ALS_ECHT = ("proef_ai_mix", "proef_ai_haiku", "proef_ai_enkel")
+PROEF_ALS_ECHT = ("proef_ai_mix", "proef_ai_haiku", "proef_ai_enkel", "proef_ai_opus")
 
 
 def _schatting_echte_meting(con) -> str | None:
@@ -475,6 +488,15 @@ def ronde(args) -> tuple[int, str | None]:
     if kwartaal:
         args.berichten.append(kwartaal)
         print(f"\nHerinnering klaargezet: {kwartaal[:80]}...")
+
+    # ---- 0f. het gratis tegoed: verloopt het bijna, of is het verlopen? ----
+    from bot import tegoed as _tegoed
+
+    over_tegoed = _tegoed.melding(con, cfg, vandaag_utc)
+    if over_tegoed:
+        con.commit()
+        args.berichten.append(over_tegoed)
+        print(f"\nMelding over het gratis tegoed klaargezet: {over_tegoed[:80]}...")
 
     # ---- 1. koersen ----
     if args.geen_data:

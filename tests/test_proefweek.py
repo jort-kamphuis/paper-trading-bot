@@ -51,9 +51,11 @@ def test_proefweek_tot_en_met_23_november():
 
 def test_herinnering_over_de_credits():
     h = OVERLAY["proefweek"]["herinnering"]
-    assert h["datum"] == "2026-11-18"
-    assert "eerste kwartaal" in h["tekst"] and "per kwartaal" in h["tekst"] and "automatisch opwaarderen uit" in h["tekst"]
-    assert "niet het hele jaar in een keer" in h["tekst"]
+    # De herinnering van 18 november ("koop voor 20 november") is verbeterd: er kwam nieuw gratis tegoed.
+    assert h["datum"] == "2026-11-19"
+    assert "hoeft niet voor 20 november" in h["tekst"] and "geldig tot 20 december 2026" in h["tekst"]
+    assert "alleen als het gratis tegoed dan niet is teruggekomen" in h["tekst"]
+    assert "Automatisch opwaarderen blijft uit" in h["tekst"]
     assert h["marge_pct"] == 20
 
 
@@ -80,12 +82,11 @@ def test_vier_ai_portefeuilles_in_de_proefweek():
     ]
 
 
-def test_opus_alleen_binnen_het_gratis_tegoed():
-    """Het gratis tegoed verloopt 20 november 00:00 UTC; de ronde van 00:30 die dag draait zonder Opus."""
-    namen = [p["naam"] for p in ai_portefeuilles(_proef(), date(2026, 11, 19))]
-    assert "proef_ai_opus" in namen
-    namen = [p["naam"] for p in ai_portefeuilles(_proef(), date(2026, 11, 20))]
-    assert "proef_ai_opus" not in namen and "proef_ai_mix" in namen
+def test_opus_draait_tot_het_eind_van_de_proefweek_mee():
+    """Sinds 17 november is er gratis tegoed tot 20 december, en ai_opus loopt mee in de echte meting."""
+    for dag in (date(2026, 11, 19), date(2026, 11, 20), date(2026, 11, 23)):
+        namen = [p["naam"] for p in ai_portefeuilles(_proef(), dag)]
+        assert "proef_ai_opus" in namen and "proef_ai_mix" in namen, dag
 
 
 def test_elke_proefportefeuille_heeft_een_tegenhanger_in_de_echte_meting():

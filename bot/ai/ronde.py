@@ -308,5 +308,7 @@ def ai_portefeuilles(cfg: dict, vandaag: date | None = None) -> list[dict]:
         tot = p.get("tot_en_met")
         if tot and vandaag > date.fromisoformat(str(tot)):
             continue
-        uit.append({"naam": str(p["naam"]), "soort": p.get("soort", "debat"), "model": p.get("model")})
+        uit.append({"naam": str(p["naam"]), "soort": p.get("soort", "debat"), "model": p.get("model"),
+                    # Doet alleen mee zolang er geldig gratis tegoed is (bot/tegoed.py).
+                    "alleen_met_gratis_tegoed": bool(p.get("alleen_met_gratis_tegoed"))})
     return uit

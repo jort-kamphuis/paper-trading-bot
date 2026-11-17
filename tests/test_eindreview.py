@@ -63,6 +63,8 @@ def cfg_nacht(cfg_min):
     cfg = copy.deepcopy(cfg_min)
     cfg["modus"] = "echt"
     cfg["ai_watchlist"] = ["AAA", "BBB"]
+    # Deze tests gaan over een krap budget: reken met $35 per maand, los van wat er nu in config.yaml staat.
+    cfg["ai"]["budget"]["max_usd_per_maand"] = 35.0
     return cfg
 
 

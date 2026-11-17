@@ -51,9 +51,9 @@ def test_proefweek_tot_en_met_23_november():
 
 def test_herinnering_over_de_credits():
     h = OVERLAY["proefweek"]["herinnering"]
-    # De herinnering van 18 november ("koop voor 20 november") is verbeterd: er kwam nieuw gratis tegoed.
+    # De eerdere herinnering ("koop voor 20 november") is achterhaald: er kwam nieuw gratis tegoed.
     assert h["datum"] == "2026-11-19"
-    assert "hoeft niet voor 20 november" in h["tekst"] and "geldig tot 20 december 2026" in h["tekst"]
+    assert "credits kopen hoeft niet voor 20 november" in h["tekst"] and "geldig tot 20 december 2026" in h["tekst"]
     assert "alleen als het gratis tegoed dan niet is teruggekomen" in h["tekst"]
     assert "Automatisch opwaarderen blijft uit" in h["tekst"]
     assert h["marge_pct"] == 20

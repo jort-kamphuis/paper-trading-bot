@@ -34,13 +34,13 @@ proefweek:
     nieuwe_waarde: 120
 
   herinnering:
-    # De herinnering van 18 november ("koop voor 20 november") is achterhaald: op 17
-    # november kwam er nieuw gratis tegoed bij. Deze verbeterde versie gaat een keer
-    # uit, op 19 november.
+    # De eerdere herinnering ("koop voor 20 november") is achterhaald: op 17
+    # november kwam er nieuw gratis tegoed bij. Deze versie gaat een keer uit, op
+    # 19 november.
     datum: "2026-11-19"
     tekst: >-
-      Verbetering van de herinnering van gisteren: credits kopen hoeft niet voor
-      20 november. Er is nieuw gratis tegoed van 100 dollar, geldig tot 20
+      Anders dan eerder afgesproken: credits kopen hoeft niet voor 20
+      november. Er is nieuw gratis tegoed van 100 dollar, geldig tot 20
       december 2026 om 00:00 UTC. Kopen is pas nodig voor 20 december, en alleen
       als het gratis tegoed dan niet is teruggekomen. Vijf dagen van tevoren
       herinnert de bot je eraan in de console te kijken. Automatisch opwaarderen

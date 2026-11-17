@@ -423,9 +423,9 @@ niets telt mee.
   Claude niets voorstelt), woensdag 18 november een extra rapport waarin de
   proef wordt beoordeeld. Dan krijg je `/akkoord` of `/afwijzen` te zien. Een
   akkoord wordt helemaal verwerkt en gemarkeerd als proefweek.
-* **18 en 19 november:** op 18 november ging er een herinnering uit om voor 20
-  november credits te kopen. Die is achterhaald door het nieuwe gratis tegoed; op
-  19 november gaat de verbeterde versie uit: kopen is pas nodig voor 20 december,
+* **19 november:** een herinnering in Telegram over de credits. Het eerdere plan
+  (voor 20 november kopen) is achterhaald door het nieuwe gratis tegoed. De
+  herinnering zegt nu: kopen is pas nodig voor 20 december,
   en alleen als het gratis tegoed dan niet is teruggekomen. De bot rekent erbij
   uit wat de meting kost: de gemeten kosten per symbool per dag van de
   proefnachten, maal de AI-lijst (30), maal de 252 beursdagen van de meting, plus

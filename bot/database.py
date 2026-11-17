@@ -144,6 +144,17 @@ CREATE TABLE IF NOT EXISTS instellingen (
     gewijzigd TEXT NOT NULL
 );
 
+-- Het koerslog: waren de koersen van de laatste beursdag er al toen de ronde ze
+-- ophaalde? Zie bot/koerslog.py.
+CREATE TABLE IF NOT EXISTS koerslog (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    gevraagd_op TEXT NOT NULL,     -- het tijdstip van ophalen, in UTC
+    ronde       TEXT NOT NULL,     -- hoofd, herkansing of handmatig
+    beursdag    TEXT NOT NULL,     -- de laatste beursdag die af had moeten zijn
+    aanwezig    INTEGER NOT NULL,  -- aandelen en fondsen met een koers van die dag
+    verwacht    INTEGER NOT NULL
+);
+
 -- Nieuwskoppen die de AI-analist te zien kreeg (wordt gevuld in stap 3).
 CREATE TABLE IF NOT EXISTS nieuws (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -11,8 +11,8 @@ kalenderdagen) weten we wat er gebeurde. Dan vult dit bestand in:
 Gerekend zoals de bot echt zou handelen: vanaf de openingskoers van de eerste
 handelsdag na de beslisdag (dan wordt een order uitgevoerd) tot de laatste
 slotkoers op of voor de beslisdag plus de horizon, met het dividend van die
-periode erbij. Vanaf het slot rekenen zou nieuws van na het slot (dat de AI om
-00:30 UTC al ziet) laten meetellen als voorspelling, terwijl de koers bij de
+periode erbij. Vanaf het slot rekenen zou nieuws van na het slot (dat de AI bij
+de nachtronde al ziet) laten meetellen als voorspelling, terwijl de koers bij de
 opening al gesprongen is (review november 2026).
 
 De Brier-score is het gemiddelde van (kans - uitkomst)^2. Lager is beter. Wie

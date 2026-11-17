@@ -164,6 +164,12 @@ def _ai_ronde(
         print(f"Datum van de volgende kwartaalcijfers bekend voor {n} van {len(aandelen)} aandelen.")
 
     client = maak_client(con, cfg)
+    # Een vaste grens voor het nieuws, gelijk voor alle portefeuilles en ook in de
+    # herkansing: de AI ziet nooit later nieuws dan in een gewone nacht.
+    from bot.ai.ronde import vaste_nieuwsgrens
+
+    nieuws_tot = vaste_nieuwsgrens(cfg)
+    print(f"De AI ziet nieuws tot {nieuws_tot[:16].replace('T', ' ')} UTC.")
     kosten_vandaag = 0.0
     meting = cfg.get("meting") or {}
     # De portefeuille die de kansen voor de hoofdvraag levert (en dus API-geld kost).
@@ -191,7 +197,7 @@ def _ai_ronde(
                 bericht.append(tekst)
         uitkomst = denk_na(
             con, cfg, client, markt, naam, datum, te_beoordelen,
-            model_override=p["model"], soort=p["soort"],
+            model_override=p["model"], soort=p["soort"], nieuws_tot=nieuws_tot,
         )
         kosten_vandaag += uitkomst.kosten_usd
         bruikbaar = sum(1 for b in uitkomst.beoordelingen.values() if b.bruikbaar)
@@ -361,6 +367,15 @@ LOKAAL_UITLEG = (
 )
 
 
+# Dit bestand schrijft een herkansing die niets hoefde te doen (zie de workflow).
+OVERGESLAGEN_BESTAND = ".ronde_overgeslagen"
+
+
+def sleutel_ronde(dag) -> str:
+    """Onder deze sleutel onthoudt de bot of de ronde van een UTC-dag compleet is afgerond."""
+    return f"ronde_klaar_{dag.isoformat()}"
+
+
 def ronde(args) -> tuple[int, str | None]:
     """De ronde zelf. Geeft de afsluitcode en het dagbericht voor Telegram."""
     from datetime import datetime, timezone
@@ -370,7 +385,9 @@ def ronde(args) -> tuple[int, str | None]:
     vandaag_utc = datetime.now(timezone.utc).date()
     waarschuwingen: list[str] = []
     args.berichten = []  # extra berichten voor Telegram (weekrapport, vragen)
+    args.overgeslagen = False  # een herkansing die niets hoefde te doen
     voor_aan: list[str] = []  # regels bovenaan het dagbericht
+    herkansing = getattr(args, "herkansing", "nee") == "ja"
 
     print(f"Dagelijkse ronde, {date.today().isoformat()} (UTC {vandaag_utc.isoformat()})")
     print("=" * 60)
@@ -407,6 +424,20 @@ def ronde(args) -> tuple[int, str | None]:
         print(LOKAAL_UITLEG)
         con.close()
         return 2, None
+
+    # ---- 0b2. de herkansing: alleen als de eerste ronde niet compleet was ----
+    # De tweede geplande ronde van de nacht (rond 08:00 UTC). Heeft de eerste alles
+    # gedaan, dan gebeurt hier niets: geen koersen, geen AI, geen bericht. Heeft de
+    # eerste niet gehandeld (de koersen waren er nog niet) of is hij mislukt, dan is
+    # dit een gewone, volledige ronde.
+    if herkansing:
+        if database.lees_instelling(con, sleutel_ronde(vandaag_utc)) == "klaar":
+            print("\nHerkansing: de eerste ronde van vandaag is compleet afgerond. Niets te doen.")
+            args.overgeslagen = True
+            con.close()
+            return 0, None
+        print("\nHerkansing: de eerste ronde van vandaag is niet compleet afgerond. Deze ronde doet alles alsnog.")
+        voor_aan.append("Dit is de herkansing: de eerste ronde van vannacht heeft niet gehandeld of is mislukt.")
 
     # ---- 0c. je antwoorden uit Telegram ----
     antwoorden: list[str] = []
@@ -453,6 +484,15 @@ def ronde(args) -> tuple[int, str | None]:
         if not _haal_data_op(args.jaren, waarschuwingen, db=db):
             con.close()
             return 1, None
+        # Het koerslog: was de laatste beursdag er al op dit tijdstip? (bot/koerslog.py)
+        from bot import koerslog
+
+        soort_ronde = "herkansing" if herkansing else ("hoofd" if getattr(args, "gepland", "nee") == "ja" else "handmatig")
+        gelogd = koerslog.leg_vast(con, cfg, soort_ronde)
+        if gelogd:
+            print(f"  Koerslog: {koerslog.als_regel(gelogd)}")
+            if gelogd["aanwezig"] < gelogd["verwacht"]:
+                waarschuwingen.append(f"Koerslog: {koerslog.als_regel(gelogd)}")
 
     markt = Markt.uit_database(con)
     if not markt.datums:
@@ -526,10 +566,15 @@ def ronde(args) -> tuple[int, str | None]:
         print("\nDE KOERSEN ZIJN NIET COMPLEET. Vannacht wordt er niet gehandeld:")
         for p in problemen:
             print(f"  {p}")
-        print(
-            "De volgende ronde haalt deze dag(en) vanzelf in, met complete koersen.\n"
-            "Blijft een symbool wegvallen, haal het dan uit config.yaml."
-        )
+        if herkansing:
+            vervolg = ("Ook de herkansing kon niet handelen. De ronde van morgen haalt deze dag(en) vanzelf in, "
+                       "met complete koersen.")
+        elif getattr(args, "gepland", "nee") == "ja":
+            vervolg = ("De herkansing van rond 08:00 UTC probeert het vannacht nog een keer. Lukt dat ook niet, "
+                       "dan haalt de ronde van morgen het vanzelf in.")
+        else:
+            vervolg = "De volgende ronde haalt deze dag(en) vanzelf in, met complete koersen."
+        print(f"{vervolg}\nBlijft een symbool wegvallen, haal het dan uit config.yaml.")
         tekst = overzicht.telegram_dagbericht(
             con,
             tot,
@@ -537,10 +582,13 @@ def ronde(args) -> tuple[int, str | None]:
                 *voor_aan,
                 "Vannacht NIET gehandeld: de koersen zijn niet compleet.",
                 *[f"  {p}" for p in problemen[:8]],
-                "De volgende ronde haalt dit vanzelf in. Blijft een symbool wegvallen, "
-                "haal het dan uit config.yaml.",
+                *[f"  {w}" for w in waarschuwingen if w.startswith("Koerslog:")],
+                f"{vervolg} Blijft een symbool wegvallen, haal het dan uit config.yaml.",
             ],
         )
+        # Niet 'klaar': de herkansing moet het vannacht opnieuw proberen.
+        database.zet_instelling(con, sleutel_ronde(vandaag_utc), "niet gehandeld: koersen niet compleet")
+        con.commit()
         con.close()
         return 0, tekst
 
@@ -608,6 +656,9 @@ def ronde(args) -> tuple[int, str | None]:
         extra.extend(f"  {w}" for w in waarschuwingen[:5])
     telegram_tekst = overzicht.telegram_dagbericht(con, tot, extra=extra)
 
+    # De ronde van deze UTC-dag is compleet: de herkansing hoeft niets meer te doen.
+    database.zet_instelling(con, sleutel_ronde(vandaag_utc), "klaar")
+    con.commit()
     con.close()
     return 0, telegram_tekst
 
@@ -634,6 +685,14 @@ def main() -> int:
         "--omschakelen", choices=["auto", "ja"], default="auto",
         help="ja: nu van de proefweek naar de echte meting (gebeurt anders vanzelf)",
     )
+    p.add_argument(
+        "--herkansing", choices=["ja", "nee"], default="nee",
+        help="ja: de tweede geplande ronde van de nacht; doet alleen iets als de eerste niet compleet was",
+    )
+    p.add_argument(
+        "--gepland", choices=["ja", "nee"], default="nee",
+        help="ja: gestart door de planning van GitHub (voor het koerslog), niet met de hand",
+    )
     args = p.parse_args()
     args.label = ""
 
@@ -657,6 +716,16 @@ def main() -> int:
             except telegram.TelegramFout as tfout:
                 print(f"Ook de foutmelding naar Telegram lukte niet: {tfout}")
         return 1
+
+    # Een herkansing die niets hoefde te doen: geen bericht (de eerste ronde heeft het
+    # zijne al gestuurd), en een briefje voor de workflow, zodat die geen dashboard
+    # bouwt uit een database zonder koersen.
+    briefje = conf.PROJECT / OVERGESLAGEN_BESTAND
+    briefje.unlink(missing_ok=True)
+    if getattr(args, "overgeslagen", False):
+        if args.db is None:
+            briefje.write_text("De herkansing hoefde niets te doen.\n", encoding="utf-8")
+        return 0
 
     if args.telegram:
         if not telegram.is_ingesteld():

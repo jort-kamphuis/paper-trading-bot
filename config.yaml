@@ -175,6 +175,12 @@ strategieen:
 ai:
   actief: true
 
+  # Tot welk tijdstip (UTC, op de dag van de ronde) de AI nieuws mag zien. Vast,
+  # zodat de AI elke nacht even veel nieuws ziet, ook als GitHub de ronde later
+  # start en ook in de herkansing van 08:00 UTC. Gelijk aan de starttijd van de
+  # hoofdronde (.github/workflows/dagelijks.yml).
+  nieuwsgrens_utc: "04:00"
+
   # De AI-portefeuilles. 'soort': debat (nieuws, bull, bear en de voorspeller, rol 'risk') of
   # enkel (een aanroep die beide kanten afweegt; test of het debat iets
   # toevoegt). 'model' zet alle rollen op dat ene model.

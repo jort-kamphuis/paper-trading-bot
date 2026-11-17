@@ -596,7 +596,7 @@ async function tekenWeekrapport(p) {
   const w = await laad(pad('weekrapport.json'));
   const delen = [];
   if (!w.rapporten.length) {
-    delen.push(el('div', { class: 'paneel' }, el('h2', { text: 'Weekrapport' }), leeg('Nog geen weekrapport. Het komt elke zondagnacht, in de ronde van 00:30 UTC.')));
+    delen.push(el('div', { class: 'paneel' }, el('h2', { text: 'Weekrapport' }), leeg('Nog geen weekrapport. Het komt elke zondagnacht, in de ronde van 04:00 UTC.')));
   } else {
     const r = w.rapporten[0];
     delen.push(el('div', { class: 'paneel' }, el('h2', { text: 'Weekrapport tot en met ' + datum(r.datum) }),

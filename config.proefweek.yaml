@@ -12,8 +12,8 @@
 
 proefweek:
   # De laatste UTC-datum waarop een ronde als proefronde draait. De ronde van
-  # 23 november 00:30 UTC (over vrijdag 20 november) is de laatste. Die van
-  # 24 november 00:30 UTC verwerkt maandag 23 november: de eerste dag van de
+  # 23 november 04:00 UTC (over vrijdag 20 november) is de laatste. Die van
+  # 24 november 04:00 UTC verwerkt maandag 23 november: de eerste dag van de
   # echte meting.
   tot_en_met: "2026-11-23"
   # Alles van de proefweek komt in een eigen database. trading.db blijft

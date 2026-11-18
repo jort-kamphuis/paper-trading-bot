@@ -192,8 +192,8 @@ def _ai_ronde(
         print(f"\n  {naam} ({p['soort']}" + (f", alles op {p['model']})" if p["model"] else ")"))
         te_beoordelen = [] if voorbij else symbolen
         if not voorbij and not tegoed.mag_draaien(cfg, p, vandaag_tegoed):
-            # Deze portefeuille (ai_opus) draait alleen op gratis tegoed. Dat is volgens
-            # config.yaml verlopen: niet beoordelen, niets betalen.
+            # Deze portefeuille draait alleen op gratis tegoed ('alleen_met_gratis_tegoed').
+            # Dat is volgens config.yaml verlopen: niet beoordelen, niets betalen.
             te_beoordelen = []
             tekst = f"{naam} overgeslagen: er is volgens config.yaml geen geldig gratis tegoed."
             print(f"    {tekst}")
@@ -272,8 +272,16 @@ def _ai_ronde(
     return bericht
 
 
-# De proefportefeuilles die precies zo werken als de echte meting.
-PROEF_ALS_ECHT = ("proef_ai_mix", "proef_ai_haiku", "proef_ai_enkel", "proef_ai_opus")
+def _proef_als_echt(normaal: dict) -> tuple[str, ...]:
+    """De proefportefeuilles waarvan de tegenhanger in de echte meting zit (config.yaml).
+
+    proef_ai_opus hoort daar sinds 18 november 2026 niet meer bij: ai_opus zit niet in
+    de echte meting, dus zijn kosten tellen niet mee in de schatting.
+    """
+    from bot.ai.kostenprognose import PROEF_NAAR_ECHT
+
+    echt = {str(p["naam"]) for p in normaal["ai"]["portefeuilles"]}
+    return tuple(proef for proef, naam in PROEF_NAAR_ECHT.items() if naam in echt)
 
 
 def _schatting_echte_meting(con) -> str | None:
@@ -286,7 +294,7 @@ def _schatting_echte_meting(con) -> str | None:
 
     normaal = conf.laad()
     p = maak_prognose(con, normaal)
-    delen = {n: p.per_portefeuille[n] for n in PROEF_ALS_ECHT if n in p.per_portefeuille}
+    delen = {n: p.per_portefeuille[n] for n in _proef_als_echt(normaal) if n in p.per_portefeuille}
     if "proef_ai_mix" not in delen:
         return None
     rapport = 0.0

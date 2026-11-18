@@ -346,8 +346,8 @@ def test_herbevestiging_wordt_opgeslagen(con, cfg):
 
 def test_afgeleide_portefeuilles_uit_de_instellingen():
     namen = {p["naam"]: p for p in afgeleid.afgeleide_portefeuilles(ECHT)}
-    assert set(namen) == {"ai_rangorde", "ai_rangorde_omgekeerd", "ai_consensus", "ai_opus_rangorde"}
-    assert namen["ai_opus_rangorde"]["soort"] == "rangorde" and namen["ai_opus_rangorde"]["bronnen"] == ["ai_opus"]
+    # Geen ai_opus_rangorde: Opus zit sinds 18 november 2026 niet in de echte meting.
+    assert set(namen) == {"ai_rangorde", "ai_rangorde_omgekeerd", "ai_consensus"}
     assert namen["ai_rangorde"]["bronnen"] == ["ai_analist"] == namen["ai_rangorde_omgekeerd"]["bronnen"]
     assert namen["ai_consensus"]["bronnen"] == ["ai_analist", "ai_enkel", "ai_controle_haiku"]
     # De bronnen zijn echte AI-portefeuilles, en de hoofdvraag wijst naar de rangorde.

@@ -188,12 +188,14 @@ ai:
     - {naam: ai_analist, soort: debat}
     - {naam: ai_controle_haiku, soort: debat, model: claude-haiku-5-5}
     - {naam: ai_enkel, soort: enkel}
-    # Verkennend, sinds 17 november 2026: hetzelfde debat, dezelfde 30 symbolen en
-    # dezelfde prompt, maar alle rollen op Opus 5.5. Is het sterkste model zijn geld
-    # waard? Opus is veruit de duurste: hij staat daarom achteraan, valt als eerste
-    # af als het budget krap wordt, en draait alleen zolang er geldig gratis tegoed is
-    # (zie 'tegoed' onderaan en bot/tegoed.py).
-    - {naam: ai_opus, soort: debat, model: claude-opus-5-5, alleen_met_gratis_tegoed: true}
+    # Geen ai_opus (alle rollen op Opus 5.5) in de echte meting, besloten op 18
+    # november 2026: in de proefweek gaf hij bijna dezelfde kansen als de mix
+    # (106 gelijke symbool-dagen: correlatie 0,95, 47 keer precies gelijk). Opus
+    # wordt daarom apart getest, buiten de meting. In de proefweek loopt hij tot het
+    # eind mee (config.proefweek.yaml).
+    # Een portefeuille met 'alleen_met_gratis_tegoed: true' draait alleen zolang er
+    # geldig gratis tegoed is (zie 'tegoed' onderaan en bot/tegoed.py). Op dit moment
+    # heeft geen enkele portefeuille dat.
 
   # Afgeleide portefeuilles: ze handelen op de kansen van de portefeuilles hierboven
   # en roepen de API zelf niet aan (bot/ai/afgeleid.py). Geen extra kosten.
@@ -206,8 +208,6 @@ ai:
     - {naam: ai_rangorde,           soort: rangorde,           bron: ai_analist}
     - {naam: ai_rangorde_omgekeerd, soort: rangorde_omgekeerd, bron: ai_analist}
     - {naam: ai_consensus,          soort: consensus,          bronnen: [ai_analist, ai_enkel, ai_controle_haiku]}
-    # De rangorde van Opus: dezelfde regels als ai_rangorde, op de kansen van ai_opus.
-    - {naam: ai_opus_rangorde,      soort: rangorde,           bron: ai_opus}
 
   # Welk model elke rol gebruikt. De kengetallen rekent de code zelf uit; daar
   # is geen model meer voor nodig.
@@ -276,11 +276,13 @@ ai:
     # Automatisch opwaarderen staat uit: het tegoed zelf is de noodrem. Is het op,
     # dan meldt de bot dat.
     #
-    # $75 per maand geldt alleen zolang er volgens 'tegoed' (onderaan) geldig gratis
-    # tegoed is. Is het laatste bekende tegoed verlopen en is er geen nieuw
-    # ingevoerd, dan valt het budget terug naar 'zonder_gratis_tegoed_usd': ai_opus
-    # doet dan niet meer mee en ai_analist loopt door. Je krijgt daar een melding van.
-    max_usd_per_maand: 75.00
+    # $35 per maand, met en zonder gratis tegoed (besloten op 18 november 2026, toen
+    # ai_opus uit de echte meting ging). De regeling zelf blijft bestaan: zet je
+    # 'max_usd_per_maand' hoger dan 'zonder_gratis_tegoed_usd', dan geldt het hogere
+    # bedrag alleen zolang er volgens 'tegoed' (onderaan) geldig gratis tegoed is en
+    # valt het budget daarna terug. Verloopt het laatste bekende tegoed, dan krijg je
+    # hoe dan ook een melding: vanaf dan betaal je zelf.
+    max_usd_per_maand: 35.00
     zonder_gratis_tegoed_usd: 35.00
     waarschuw_onder_usd: 5.00
     # De reserve voor de portefeuille van de hoofdvraag (zie bot/ai/budget.py) krijgt

@@ -123,8 +123,8 @@ Waarom verder zo, en niet anders (review november 2026):
 ### Spelregels voor al het andere
 
 Alles naast de hoofdvraag is **verkennend**: de regelstrategieën, `ai_analist`,
-het Haiku-controlepotje, `ai_enkel`, `ai_opus`, `ai_rangorde_omgekeerd`,
-`ai_consensus`, `ai_opus_rangorde`, de meetlatten SPY en BTC, de weekrapporten. Met zoveel portefeuilles haalt er door
+het Haiku-controlepotje, `ai_enkel`, `ai_rangorde_omgekeerd`,
+`ai_consensus`, de meetlatten SPY en BTC, de weekrapporten. Met zoveel portefeuilles haalt er door
 toeval altijd wel een de grens van 0,05. Daarom, vooraf vastgelegd:
 
 * Een portefeuille telt alleen als **winnaar** als hij zijn eigen meetlat (even
@@ -203,13 +203,22 @@ draaide, rond 01:40 UTC). Aan de regels van de portefeuilles en aan de toets is
 daarbij niets veranderd.
 
 **Ook op 17 november, nog voor de start:** er kwam nieuw gratis API-tegoed bij
-(100 dollar, geldig tot 20 december 2026). Daarom lopen er twee verkennende
-portefeuilles extra mee: `ai_opus` (hetzelfde debat, dezelfde 30 symbolen en
+(100 dollar, geldig tot 20 december 2026). Daarom zouden er twee verkennende
+portefeuilles extra meelopen: `ai_opus` (hetzelfde debat, dezelfde 30 symbolen en
 dezelfde prompt, alle rollen op Opus 5.5) en `ai_opus_rangorde` (de rangorde op
-zijn kansen). Het AI-budget is $75 per maand zolang er gratis tegoed is, en valt
-anders terug naar $35 (zie "Kosten"). De hoofdvraag is niet veranderd: `ai_rangorde`
-op de kansen van `ai_analist`, 30 symbolen. De twee nieuwe portefeuilles tellen mee
-in het aantal van de spelregels, dus de grens voor een winnaar wordt strenger.
+zijn kansen), met een AI-budget van $75 per maand zolang er gratis tegoed is.
+
+**Aangepast op 18 november, nog voor de start:** `ai_opus` en `ai_opus_rangorde`
+gaan toch **niet** mee in de echte meting. In de proefweek gaf Opus bijna dezelfde
+kansen als de mix: op 106 gelijke symbool-dagen was de correlatie 0,95, 47 keer
+was de kans precies gelijk, en in de eerste nacht kozen de twee rangordes 7 van de
+10 dezelfde symbolen. Een tweede portefeuille die bijna hetzelfde doet, maakt de
+grens voor een winnaar strenger zonder iets te leren. Opus wordt daarom apart
+getest, buiten de meting; in de proefweek loopt hij tot het eind door. Het
+AI-budget is $35 per maand (zie "Kosten"). De hoofdvraag is niet veranderd:
+`ai_rangorde` op de kansen van `ai_analist`, 30 symbolen. Naast de hoofdvraag
+lopen er 11 verkennende portefeuilles mee, dus de grens voor een winnaar is 0,05
+gedeeld door 11.
 
 **Tussenstanden zijn verkennend.** Weekrapporten en het dashboard tonen onderweg
 p-waarden met het woord "verkennend", nooit "betekenisvol". Wie elke week kijkt en
@@ -316,7 +325,7 @@ logboek op GitHub.
   taken vaak een uur later; dat geeft niet.
 * **De herkansing begint om 08:00 UTC.** Heeft de hoofdronde alles gedaan, dan
   stopt de herkansing meteen: geen koersen, geen AI, geen bericht, geen nieuw
-  dashboard. Kon de hoofdronde niet handelen (de koersen waren er nog niet), of
+  dashboard, en er wordt niets bewaard. Kon de hoofdronde niet handelen (de koersen waren er nog niet), of
   is hij mislukt of nooit gestart, dan doet de herkansing de hele ronde alsnog en
   krijg je zijn bericht, met de vermelding dat het de herkansing is.
 * **De AI ziet in de herkansing niet meer nieuws dan anders:** de grens ligt vast
@@ -408,16 +417,17 @@ niets telt mee.
 * **Elk Telegram-bericht** begint met `[PROEFWEEK, telt niet mee]`.
 * **Vier AI-portefeuilles op de 30 symbolen van de AI-lijst** (tot en met 15
   november op alle 46), met precies de code van de echte meting:
-  * `proef_ai_opus`: alles op Opus 5.5, zoals `ai_opus` in de echte meting. Eerst
-    alleen tot en met 19 november gepland; sinds er op 17 november nieuw gratis
-    tegoed kwam, draait hij tot het eind van de proefweek mee;
+  * `proef_ai_opus`: alles op Opus 5.5. Eerst alleen tot en met 19 november
+    gepland; sinds er op 17 november nieuw gratis tegoed kwam, draait hij tot het
+    eind van de proefweek mee. In de echte meting zit hij niet (besluit van 18
+    november, zie "De hoofdvraag");
   * `proef_ai_mix`, `proef_ai_haiku` en `proef_ai_enkel`: dezelfde opzet als
     `ai_analist`, `ai_controle_haiku` en `ai_enkel` in de echte meting. Zo meet
     je vooraf wat die kosten.
-* **Vier afgeleide portefeuilles** zonder API-kosten, zoals in de echte meting:
-  `proef_ai_rangorde`, `proef_ai_rangorde_omgekeerd` (allebei op de kansen van
-  `proef_ai_mix`), `proef_ai_consensus` (mix, enkel en Haiku) en
-  `proef_ai_opus_rangorde` (op de kansen van `proef_ai_opus`).
+* **Vier afgeleide portefeuilles** zonder API-kosten: `proef_ai_rangorde`,
+  `proef_ai_rangorde_omgekeerd` (allebei op de kansen van `proef_ai_mix`) en
+  `proef_ai_consensus` (mix, enkel en Haiku), zoals in de echte meting, plus
+  `proef_ai_opus_rangorde` (op de kansen van `proef_ai_opus`, alleen in de proefweek).
 * **Budget:** $90 voor de proefweek.
 * **De akkoordroute als test:** zondag het weekrapport (met een testvoorstel als
   Claude niets voorstelt), woensdag 18 november een extra rapport waarin de
@@ -762,9 +772,9 @@ Bull, bear en risk manager zien ook zelf de nieuwskoppen, niet alleen de
 samenvatting. Alles wordt bewaard in de tabel `ai_besluiten`: de kengetallen,
 wat elke rol zei, en **welke nieuwskoppen de AI zag, met hun publicatietijd**.
 
-### Acht AI-portefeuilles
+### Zes AI-portefeuilles
 
-Vier vragen de AI elke nacht om kansen (en kosten dus API-geld):
+Drie vragen de AI elke nacht om kansen (en kosten dus API-geld):
 
 * **`ai_analist`**: zoals hierboven. Levert de kansen voor de hoofdvraag, en
   handelt zelf volgens de beslisregel (kopen vanaf 0,55). Verkennend.
@@ -772,15 +782,13 @@ Vier vragen de AI elke nacht om kansen (en kosten dus API-geld):
   model. Is het duurdere model zijn geld waard?
 * **`ai_enkel`**: een enkele aanroep (Sonnet) die alles zelf afweegt, zonder
   debat. Voegt het debat iets toe?
-* **`ai_opus`** (sinds 17 november): hetzelfde debat, dezelfde 30 symbolen en
-  dezelfde prompt, maar alle rollen op Opus 5.5, het sterkste van de drie
-  modellen. Is dat zijn geld waard? Opus is veruit de duurste (in de proefweek
-  ongeveer $0,06 per symbool per dag, tegen $0,02 voor `ai_analist`). Hij draait
-  daarom alleen zolang er gratis tegoed is, en valt als eerste af als het budget
-  krap wordt.
 
-Vier zijn **afgeleid**: ze handelen op de kansen die er die nacht al zijn en
-roepen de API niet aan (`bot/ai/afgeleid.py`). Voor alle vier: 10% per positie,
+Een portefeuille op Opus 5.5 (`ai_opus`) zit er niet bij: in de proefweek gaf
+Opus bijna dezelfde kansen als de mix, tegen ongeveer $0,065 per symbool per dag
+in plaats van $0,025. Opus wordt apart getest, buiten de meting.
+
+Drie zijn **afgeleid**: ze handelen op de kansen die er die nacht al zijn en
+roepen de API niet aan (`bot/ai/afgeleid.py`). Voor alle drie: 10% per positie,
 hooguit 10 posities, hooguit 2 crypto, en wisselen alleen na de houdtijd van 14
 kalenderdagen.
 
@@ -795,8 +803,6 @@ kalenderdagen.
 * **`ai_consensus`**: koopt alleen wat `ai_analist`, `ai_enkel` en
   `ai_controle_haiku` alle drie boven de basiskans zetten (precies op de
   basiskans telt niet). Niet altijd belegd.
-* **`ai_opus_rangorde`** (sinds 17 november): dezelfde regels als `ai_rangorde`,
-  maar op de kansen van `ai_opus`. Draait `ai_opus` niet, dan verandert hier niets.
 
 In een nacht waarin een bron niet alle symbolen kon beoordelen, doen de afgeleide
 portefeuilles niets: de rangorde zou dan scheef zijn naar wat toevallig wel
@@ -830,8 +836,8 @@ er is geen nieuwsgeschiedenis. Daarom:
 
 ### Kosten
 
-Het budget staat in `config.yaml` op **$75 per maand zolang er gratis tegoed
-is**, en anders op **$35 per maand**. Automatisch opwaarderen staat uit: het tegoed
+Het budget staat in `config.yaml` op **$35 per maand**, met en zonder gratis
+tegoed. Automatisch opwaarderen staat uit: het tegoed
 zelf is de noodrem. Is het tegoed op, dan meldt de bot dat in Telegram; in zo'n
 nacht doen de afgeleide portefeuilles niets. De afgeleide portefeuilles kosten zelf
 niets extra.
@@ -842,12 +848,16 @@ Of dat elke maand terugkomt, is niet bekend. De bot kan het saldo niet zelf
 opvragen; wat hij weet, staat in `config.yaml` onder `tegoed`, met de hand
 overgenomen uit de console.
 
-* Zolang er volgens `config.yaml` geldig gratis tegoed is: budget $75, en `ai_opus`
-  draait mee.
-* Is het laatste bekende tegoed verlopen en is er geen nieuw ingevoerd: het budget
-  valt terug naar $35 per maand, `ai_opus` doet niet meer mee, en `ai_analist`
-  loopt door. Wat in dezelfde maand al was uitgegeven terwijl het tegoed nog
-  geldig was, telt niet mee in die $35. Je krijgt daar een melding van in Telegram.
+* Het budget is $35 per maand, of er nu gratis tegoed is of niet. Verloopt het
+  laatste bekende tegoed zonder dat er nieuw is ingevoerd, dan verandert er aan de
+  meting niets, maar je betaalt vanaf dan zelf. Je krijgt daar een melding van in
+  Telegram.
+* De regeling van 17 november bestaat nog in de code (`bot/tegoed.py`), voor als er
+  later een dure portefeuille bij komt: staat `max_usd_per_maand` hoger dan
+  `zonder_gratis_tegoed_usd`, dan geldt het hogere bedrag alleen zolang er gratis
+  tegoed is, en een portefeuille met `alleen_met_gratis_tegoed` stopt als het
+  tegoed verlopen is. Op dit moment zijn beide bedragen $35 en heeft geen enkele
+  portefeuille die instelling.
 * Vijf dagen voor het verlopen stuurt de bot een herinnering: kijk in de console
   of er nieuw tegoed is. Zo ja, dan komt er een regel bij in `config.yaml`. Zo
   nee, dan is credits kopen pas dan nodig.
@@ -860,8 +870,8 @@ de bot daarnaast een herinnering om het tegoed voor het volgende kwartaal te
 controleren, met het bedrag uit de kosten die dan echt gemeten zijn, plus 20% marge.
 
 Het budget telt per maand, en december heeft de meeste AI-nachten (22). Wordt het
-in een maand krap, dan stoppen eerst de bijportefeuilles, de duurste (`ai_opus`)
-het eerst: de bot houdt genoeg over om `ai_analist`, die de kansen voor de
+in een maand krap, dan stoppen eerst de bijportefeuilles (`ai_enkel` en het
+Haiku-potje): de bot houdt genoeg over om `ai_analist`, die de kansen voor de
 hoofdvraag levert, de maand te laten afmaken. Na de einddatum (23 november 2027)
 beoordeelt de AI niets meer; de posities lopen dan af na hun houdtijd.
 

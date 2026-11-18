@@ -83,16 +83,28 @@ def test_vier_ai_portefeuilles_in_de_proefweek():
 
 
 def test_opus_draait_tot_het_eind_van_de_proefweek_mee():
-    """Sinds 17 november is er gratis tegoed tot 20 december, en ai_opus loopt mee in de echte meting."""
+    """Sinds 17 november is er gratis tegoed tot 20 december. Opus loopt de proefweek uit, als bewijs."""
     for dag in (date(2026, 11, 19), date(2026, 11, 20), date(2026, 11, 23)):
         namen = [p["naam"] for p in ai_portefeuilles(_proef(), dag)]
         assert "proef_ai_opus" in namen and "proef_ai_mix" in namen, dag
 
 
-def test_elke_proefportefeuille_heeft_een_tegenhanger_in_de_echte_meting():
+def test_elke_proefportefeuille_behalve_opus_heeft_een_tegenhanger_in_de_echte_meting():
     echt = {(p["soort"], p["model"]) for p in ai_portefeuilles(conf.laad())}
+    zonder = []
     for p in ai_portefeuilles(_proef(), date(2026, 11, 21)):
-        assert (p["soort"], p["model"]) in echt, p["naam"]
+        if (p["soort"], p["model"]) not in echt:
+            zonder.append(p["naam"])
+    # Opus zit sinds 18 november 2026 alleen nog in de proefweek.
+    assert zonder == ["proef_ai_opus"]
+
+
+def test_de_echte_meting_heeft_geen_opus():
+    echt = conf.laad()
+    assert not any("opus" in str(p["naam"]) or p.get("model") == "claude-opus-5-5" for p in echt["ai"]["portefeuilles"])
+    assert not any("opus" in str(p["naam"]) for p in echt["ai"]["afgeleid"])
+    # De proefweek houdt haar eigen, ruimere budget; de echte meting staat op $35.
+    assert echt["ai"]["budget"]["max_usd_per_maand"] == 35 and _proef()["ai"]["budget"]["max_usd_per_maand"] == 90
 
 
 def test_mix_gebruikt_precies_de_rollen_van_de_echte_meting():

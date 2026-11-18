@@ -89,6 +89,17 @@ def test_het_dashboard_wordt_niet_gebouwd_na_een_herkansing_die_niets_deed():
     assert ".ronde_overgeslagen" in (PROJECT / ".gitignore").read_text(encoding="utf-8")
 
 
+def test_een_herkansing_die_niets_deed_bewaart_ook_niets():
+    """Op 18 november 2026 maakte zo'n herkansing nog een commit met alleen een nieuw tijdstempel."""
+    w = yaml.safe_load(WORKFLOW)
+    bewaren = [s for s in w["jobs"]["ronde"]["steps"] if s.get("name") == "Database bewaren"]
+    assert len(bewaren) == 1
+    voorwaarde = bewaren[0]["if"]
+    assert "steps.ronde.outputs.overgeslagen != 'ja'" in voorwaarde
+    # Na een mislukte of afgebroken ronde wordt nog steeds bewaard.
+    assert "always()" in voorwaarde and "steps.ronde.outcome != 'skipped'" in voorwaarde
+
+
 # ---------------------------------------------------- de vaste nieuwsgrens
 
 

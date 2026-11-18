@@ -8,8 +8,8 @@
 #
 # Het eerste gratis API-tegoed (100 dollar) verloopt op 20 november 2026 om 00:00
 # UTC. Op 17 november kwam er een tweede bij, geldig tot 20 december. Opus draait
-# daarom tot het eind van de proefweek mee: in de echte meting loopt hij ook mee
-# (ai_opus), dus zo testen de proefnachten precies de echte opzet.
+# daarom tot het eind van de proefweek mee, als bewijs: in de echte meting zit hij
+# niet (besloten op 18 november: zijn kansen lijken te veel op die van de mix).
 
 proefweek:
   # De laatste UTC-datum waarop een ronde als proefronde draait. De ronde van
@@ -62,12 +62,13 @@ ai:
   # 'model' gelden de rollen uit config.yaml (de instellingen van de echte
   # meting). 'tot_en_met' zou een portefeuille na die UTC-datum laten stoppen.
   portefeuilles:
-    - {naam: proef_ai_opus,  soort: debat, model: claude-opus-5-5}   # zoals ai_opus
+    - {naam: proef_ai_opus,  soort: debat, model: claude-opus-5-5}   # alleen in de proefweek
     - {naam: proef_ai_mix,   soort: debat}                            # zoals ai_analist
     - {naam: proef_ai_haiku, soort: debat, model: claude-haiku-5-5}   # zoals ai_controle_haiku
     - {naam: proef_ai_enkel, soort: enkel}                            # zoals ai_enkel
 
-  # De afgeleide portefeuilles van de proefweek (geen API-kosten), zoals in config.yaml.
+  # De afgeleide portefeuilles van de proefweek (geen API-kosten), zoals in config.yaml,
+  # plus de rangorde van Opus (alleen in de proefweek).
   afgeleid:
     - {naam: proef_ai_rangorde,           soort: rangorde,           bron: proef_ai_mix}
     - {naam: proef_ai_rangorde_omgekeerd, soort: rangorde_omgekeerd, bron: proef_ai_mix}

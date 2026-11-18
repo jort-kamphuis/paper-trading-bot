@@ -111,7 +111,10 @@ def verslag(con: sqlite3.Connection, regels_cfg: dict | None = None) -> str:
     per_aantal = [(n, kostenprognose.bedrag_hele_meting(con, normaal, symbolen=n)) for n in AANTALLEN]
     if per_aantal[0][1].totaal_usd is not None:
         dagen = per_aantal[0][1].beursdagen
-        uit.append(f"Hele meting ({dagen} beursdagen, drie AI-portefeuilles en de weekrapporten samen):")
+        # Het aantal komt uit config.yaml: de AI-portefeuilles van de echte meting die de API aanroepen.
+        aantal_ai = len(normaal["ai"]["portefeuilles"])
+        uit.append(f"Hele meting ({dagen} beursdagen, de {aantal_ai} AI-portefeuilles van de echte meting "
+                   f"en de weekrapporten samen):")
         for n, b in per_aantal:
             uit.append(f"  {n} symbolen: ${getal(b.totaal_usd, 2)}, met 20% marge ${getal(b.totaal_usd * 1.2, 2)}")
         uit.append("")

@@ -87,6 +87,6 @@ def cfg_min():
     cfg = copy.deepcopy(conf.laad())
     cfg["algemeen"] = dict(INSTELLINGEN)
     # Zonder 'tegoed' hangt niets van de datum van vandaag af: het budget is dan het
-    # maandbudget en ai_opus draait altijd. tests/test_tegoed.py test het tegoed zelf.
+    # maandbudget. tests/test_tegoed.py test het tegoed zelf.
     cfg.pop("tegoed", None)
     return cfg

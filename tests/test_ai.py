@@ -310,16 +310,23 @@ def test_hoofdportefeuille_gebruikt_de_modellen_per_rol(con, cfg_ai, markt_en_da
     assert per_rol == {r: cfg_ai["ai"]["rollen"][r] for r in ("nieuws", "bull", "bear", "risk")}
 
 
-def test_vier_ai_portefeuilles_in_de_echte_meting(cfg_ai):
+def test_drie_ai_portefeuilles_in_de_echte_meting(cfg_ai):
+    """Zonder ai_opus (besluit van 18 november 2026: in de proefweek bijna gelijk aan de mix)."""
     lijst = ai_portefeuilles(cfg_ai)
     namen = {p["naam"]: p for p in lijst}
-    assert [p["naam"] for p in lijst] == ["ai_analist", "ai_controle_haiku", "ai_enkel", "ai_opus"], (
-        "ai_analist eerst (die loopt altijd door), de duurste (ai_opus) achteraan")
+    assert [p["naam"] for p in lijst] == ["ai_analist", "ai_controle_haiku", "ai_enkel"], (
+        "ai_analist eerst: die loopt altijd door")
     assert namen["ai_enkel"]["soort"] == "enkel"
-    # ai_opus: hetzelfde debat, alle rollen op Opus 5.5, en alleen zolang er gratis tegoed is.
-    assert namen["ai_opus"] == {"naam": "ai_opus", "soort": "debat", "model": "claude-opus-5-5",
-                                "alleen_met_gratis_tegoed": True}
-    assert not any(p["alleen_met_gratis_tegoed"] for p in lijst if p["naam"] != "ai_opus")
+    assert not any(p["model"] == "claude-opus-5-5" for p in lijst), "geen Opus in de echte meting"
+    assert not any(p["alleen_met_gratis_tegoed"] for p in lijst)
+
+
+def test_een_portefeuille_kan_van_het_gratis_tegoed_afhangen(cfg_ai):
+    """De regeling bestaat nog, voor als er later een dure portefeuille bij komt."""
+    cfg_ai["ai"]["portefeuilles"].append(
+        {"naam": "ai_opus", "soort": "debat", "model": "claude-opus-5-5", "alleen_met_gratis_tegoed": True})
+    opus = ai_portefeuilles(cfg_ai)[-1]
+    assert opus == {"naam": "ai_opus", "soort": "debat", "model": "claude-opus-5-5", "alleen_met_gratis_tegoed": True}
 
 
 def test_portefeuille_met_einddatum_stopt_daarna(cfg_ai):

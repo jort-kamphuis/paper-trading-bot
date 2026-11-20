@@ -9,12 +9,16 @@ geldig).
 Twee dingen hangen ervan af:
 
 1. Het budget. Zolang er volgens config.yaml geldig gratis tegoed is, geldt het
-   ruime maandbudget (ai.budget.max_usd_per_maand). Is het laatste bekende tegoed
-   verlopen en is er geen nieuw ingevoerd, dan valt het budget terug naar
-   ai.budget.zonder_gratis_tegoed_usd. Wat in dezelfde maand al is uitgegeven op
-   dagen dat het tegoed nog geldig was, telt daar niet in mee: dat was gratis.
-   Portefeuilles met 'alleen_met_gratis_tegoed' (ai_opus) doen dan niet meer mee;
+   maandbudget (ai.budget.max_usd_per_maand). Is het laatste bekende tegoed
+   verlopen en is er geen nieuw ingevoerd, dan geldt
+   ai.budget.zonder_gratis_tegoed_usd, als dat lager is. Wat in dezelfde maand al
+   is uitgegeven op dagen dat het tegoed nog geldig was, telt daar niet in mee: dat
+   was gratis. Portefeuilles met 'alleen_met_gratis_tegoed' doen dan niet meer mee;
    ai_analist, die de kansen voor de hoofdvraag levert, loopt door.
+   Sinds 18 november 2026 zijn beide bedragen gelijk ($35) en heeft geen enkele
+   portefeuille 'alleen_met_gratis_tegoed' (ai_opus zit niet in de echte meting).
+   Het verlopen van het tegoed verandert dan niets aan de ronde; de melding blijft,
+   want vanaf dat moment betaalt de gebruiker zelf.
 
 2. Het weekrapport laat zien welk tegoed er bekend is, wanneer het verloopt en wat
    de bot sindsdien heeft uitgegeven. Dat is een schatting: de bot telt alleen wat
@@ -78,7 +82,9 @@ def budget_plafond(con: sqlite3.Connection, cfg: dict, dag: date) -> float:
     Met geldig gratis tegoed: het gewone maandbudget. Zonder: het lagere bedrag, plus
     wat deze maand al is uitgegeven op dagen dat het tegoed nog geldig was. Zo blijft
     wat de gebruiker zelf betaalt onder het lagere bedrag, en raakt het budget niet in
-    een klap 'op' doordat het gratis deel van de maand al meer kostte.
+    een klap 'op' doordat het gratis deel van de maand al meer kostte. Het wordt nooit
+    meer dan het gewone maandbudget: zijn beide bedragen gelijk, dan is het plafond
+    altijd dat ene bedrag.
     """
     gewoon = float(cfg["ai"]["budget"]["max_usd_per_maand"])
     if is_geldig(cfg, dag):
@@ -96,7 +102,39 @@ def budget_plafond(con: sqlite3.Connection, cfg: dict, dag: date) -> float:
             continue
         if any(t.geldig_op(geboekt) for t in alle):
             gratis += float(rij["s"])
-    return laag + gratis
+    return min(gewoon, laag + gratis)
+
+
+def afhankelijk(cfg: dict) -> list[str]:
+    """De AI-portefeuilles die alleen draaien zolang er gratis tegoed is."""
+    return [
+        str(p["naam"]) for p in ((cfg.get("ai") or {}).get("portefeuilles") or [])
+        if isinstance(p, dict) and p.get("alleen_met_gratis_tegoed")
+    ]
+
+
+def _gevolg(cfg: dict, nu: bool) -> str:
+    """Wat er zonder gratis tegoed verandert: een hele zin, met hoofdletter en zonder punt.
+
+    'nu': het is al zover (tegenwoordige tijd); anders: het komt eraan.
+    """
+    from bot.tekst import dollar
+
+    laag, gewoon = terugval_usd(cfg), float(cfg["ai"]["budget"]["max_usd_per_maand"])
+    namen = afhankelijk(cfg)
+    if laag < gewoon:
+        zin = (f"Het AI-budget is teruggevallen van {dollar(gewoon)} naar {dollar(laag)} per maand" if nu
+               else f"Het AI-budget valt dan terug van {dollar(gewoon)} naar {dollar(laag)} per maand")
+    else:
+        zin = (f"Het AI-budget blijft {dollar(gewoon)} per maand" if nu
+               else f"Het AI-budget blijft dan {dollar(gewoon)} per maand")
+    if namen:
+        lijst_ = ", ".join(namen)
+        zin += (f": {lijst_} doet niet meer mee, ai_analist loopt door" if nu
+                else f" ({lijst_} stopt, ai_analist loopt door)")
+    elif laag >= gewoon:
+        zin += " en aan de meting verandert niets"
+    return zin
 
 
 def mag_draaien(cfg: dict, portefeuille: dict, dag: date) -> bool:
@@ -132,9 +170,11 @@ def als_tekst(con: sqlite3.Connection, cfg: dict, vandaag: date) -> str:
             kop,
             ("  Er is geen geldig gratis tegoed bekend"
              + (f": het laatste verliep op {_datum(laatste)}." if laatste else ".")),
-            f"  Het AI-budget is daarom {dollar(budget_plafond(con, cfg, vandaag))} voor deze maand "
-            f"({dollar(terugval_usd(cfg))} per maand zonder gratis tegoed) en ai_opus doet niet mee. "
-            f"Staat er in de console wel nieuw tegoed, laat het dan in config.yaml zetten.",
+            f"  Het AI-budget is {dollar(budget_plafond(con, cfg, vandaag))} voor deze maand "
+            f"({dollar(terugval_usd(cfg))} per maand zonder gratis tegoed)"
+            + (f" en {', '.join(afhankelijk(cfg))} doet niet mee" if afhankelijk(cfg) else "")
+            + ". Je betaalt de AI-kosten nu zelf. "
+            "Staat er in de console wel nieuw tegoed, laat het dan in config.yaml zetten.",
         ])
     regels = [kop]
     vorige_verloop: date | None = None
@@ -154,8 +194,7 @@ def als_tekst(con: sqlite3.Connection, cfg: dict, vandaag: date) -> str:
         vorige_verloop = t.verloopt
     regels.append(
         "  Kijk rond de vervaldatum in de console of er nieuw tegoed is bijgekomen. Zo ja: laat het in "
-        f"config.yaml zetten. Zo nee: dan valt het AI-budget terug naar {dollar(terugval_usd(cfg))} per maand "
-        "en stopt ai_opus; ai_analist loopt door."
+        f"config.yaml zetten. Zo nee: dan betaal je vanaf die dag zelf. {_gevolg(cfg, nu=False)}."
     )
     return "\n".join(regels)
 
@@ -174,7 +213,6 @@ def melding(con: sqlite3.Connection, cfg: dict, vandaag: date) -> str | None:
     laatste = laatste_verloop(cfg)
     if laatste is None:
         return None
-    laag, gewoon = terugval_usd(cfg), float(cfg["ai"]["budget"]["max_usd_per_maand"])
     if not is_geldig(cfg, vandaag):
         sleutel = f"tegoed_verlopen_{laatste.isoformat()}"
         if database.lees_instelling(con, sleutel) is not None:
@@ -182,10 +220,9 @@ def melding(con: sqlite3.Connection, cfg: dict, vandaag: date) -> str | None:
         database.zet_instelling(con, sleutel, "gemeld")
         return (
             f"LET OP: het gratis API-tegoed is volgens config.yaml verlopen op {_datum(laatste)} en er is geen "
-            f"nieuw tegoed ingevoerd. Het AI-budget is teruggevallen van {dollar(gewoon)} naar {dollar(laag)} per "
-            f"maand: ai_opus doet niet meer mee, ai_analist loopt door. Staat er in de console wel nieuw tegoed, "
-            f"laat het dan in config.yaml zetten. Staat het er niet, dan betaal je vanaf nu zelf: zorg dat er "
-            f"credits zijn, met automatisch opwaarderen uit."
+            f"nieuw tegoed ingevoerd. {_gevolg(cfg, nu=True)}. Staat er in de console wel nieuw "
+            f"tegoed, laat het dan in config.yaml zetten. Staat het er niet, dan betaal je vanaf nu zelf: zorg "
+            f"dat er credits zijn, met automatisch opwaarderen uit."
         )
     dagen_vooraf = int((cfg.get("tegoed") or {}).get("waarschuw_dagen_vooraf", 5))
     if (laatste - vandaag).days <= dagen_vooraf:
@@ -196,7 +233,6 @@ def melding(con: sqlite3.Connection, cfg: dict, vandaag: date) -> str | None:
         return (
             f"Herinnering: het gratis API-tegoed verloopt op {_datum(laatste)} om 00:00 UTC. Kijk in de console of "
             f"er nieuw tegoed is bijgekomen. Zo ja: laat het in config.yaml zetten, dan blijft alles zoals het is. "
-            f"Zo nee: credits kopen is pas nodig voor die datum, en het AI-budget valt dan terug van "
-            f"{dollar(gewoon)} naar {dollar(laag)} per maand (ai_opus stopt, ai_analist loopt door)."
+            f"Zo nee: credits kopen is pas nodig voor die datum. {_gevolg(cfg, nu=False)}."
         )
     return None

@@ -1,11 +1,13 @@
-"""Tests voor het gratis API-tegoed (bot/tegoed.py), ai_opus en het budget dat ervan afhangt.
+"""Tests voor het gratis API-tegoed (bot/tegoed.py) en het budget dat ervan afhangt.
 
-Beslissingen van 17 november 2026:
-* ai_opus (alle rollen op Opus 5.5) en ai_opus_rangorde lopen verkennend mee;
-* het AI-budget is $75 per maand zolang er volgens config.yaml geldig gratis tegoed
-  is. Is het laatste bekende tegoed verlopen en is er geen nieuw ingevoerd, dan
-  valt het terug naar $35: ai_opus doet niet meer mee, ai_analist loopt door, en er
-  gaat een melding naar Telegram;
+Beslissing van 18 november 2026: ai_opus en ai_opus_rangorde zitten NIET in de echte
+meting (in de proefweek gaf Opus bijna dezelfde kansen als de mix) en het AI-budget
+is $35 per maand, met en zonder gratis tegoed. De regeling zelf blijft bestaan en
+wordt hier getest met de opzet van 17 november ('RUIM': ai_opus erbij, $75 zolang er
+gratis tegoed is en anders $35):
+* is het laatste bekende tegoed verlopen en is er geen nieuw ingevoerd, dan valt het
+  budget terug, doet een portefeuille met 'alleen_met_gratis_tegoed' niet meer mee,
+  loopt ai_analist door, en gaat er een melding naar Telegram;
 * het weekrapport laat zien welk tegoed er bekend is en wanneer het verloopt.
 """
 
@@ -30,6 +32,20 @@ from tests.conftest import INSTELLINGEN, maak_markt, werkdagen
 
 ECHT = conf.laad()
 PROJECT = Path(__file__).resolve().parent.parent
+
+
+def _met_opus(cfg: dict) -> dict:
+    """De opzet van 17 november: ai_opus en zijn rangorde erbij, $75 zolang er gratis tegoed is."""
+    cfg = copy.deepcopy(cfg)
+    cfg["ai"]["portefeuilles"].append(
+        {"naam": "ai_opus", "soort": "debat", "model": "claude-opus-5-5", "alleen_met_gratis_tegoed": True})
+    cfg["ai"]["afgeleid"].append({"naam": "ai_opus_rangorde", "soort": "rangorde", "bron": "ai_opus"})
+    cfg["ai"]["budget"]["max_usd_per_maand"] = 75.0
+    cfg["ai"]["budget"]["zonder_gratis_tegoed_usd"] = 35.0
+    return cfg
+
+
+RUIM = _met_opus(ECHT)
 VANDAAG = datetime.now(timezone.utc).date()
 
 
@@ -59,7 +75,8 @@ def _kosten(con, datum: str, usd: float) -> None:
 
 def test_de_instellingen_zoals_vastgelegd():
     budget = ECHT["ai"]["budget"]
-    assert budget["max_usd_per_maand"] == 75 and budget["zonder_gratis_tegoed_usd"] == 35
+    assert budget["max_usd_per_maand"] == 35 and budget["zonder_gratis_tegoed_usd"] == 35
+    assert tegoed.afhankelijk(ECHT) == [] and tegoed.afhankelijk(RUIM) == ["ai_opus"]
     alle = tegoed.lijst(ECHT)
     assert [(t.bedrag_usd, t.toegekend.isoformat(), t.verloopt.isoformat()) for t in alle] == [
         (100.0, "2026-11-13", "2026-11-20"), (100.0, "2026-11-17", "2026-12-20")]
@@ -82,6 +99,7 @@ def test_opus_gebruikt_dezelfde_prompt_en_dezelfde_symbolen(con, cfg_min):
     """ai_opus is het gewone debat met een ander model: dezelfde instructies, dezelfde 30 symbolen."""
     from bot.ai.analist import AIAnalist
 
+    cfg_min = _met_opus(cfg_min)
     opus = [p for p in ronde_mod.ai_portefeuilles(cfg_min) if p["naam"] == "ai_opus"][0]
     client = NepClient(Budget(con, cfg_min))
     gewoon = AIAnalist(con, cfg_min, client, soort="debat")
@@ -124,34 +142,55 @@ def test_nieuw_tegoed_invoeren_maakt_het_weer_geldig(cfg_min):
 # ------------------------------------------------------------------ het budget
 
 
+def test_in_de_echte_meting_is_het_budget_35_met_en_zonder_gratis_tegoed(con):
+    """Besluit van 18 november 2026. Ook wat in de gratis dagen van de maand is uitgegeven, telt gewoon mee."""
+    for dag in ("2026-11-24", "2026-12-19", "2026-12-20", "2027-01-15"):
+        b = Budget(con, ECHT, vandaag=dag)
+        assert b.max_usd == 35.0 and b.resterend() == 35.0, dag
+    for dag in range(1, 20):
+        _kosten(con, f"2026-12-{dag:02d}", 1.00)            # $19 terwijl het tegoed geldig was
+    assert Budget(con, ECHT, vandaag="2026-12-19").resterend() == pytest.approx(16.0)
+    na = Budget(con, ECHT, vandaag="2026-12-21")
+    assert na.max_usd == 35.0 and na.resterend() == pytest.approx(16.0), "het plafond blijft $35 voor de hele maand"
+
+
 def test_het_budget_valt_terug_naar_35_zodra_het_tegoed_verlopen_is(con):
-    assert tegoed.budget_plafond(con, ECHT, date(2026, 12, 19)) == 75.0
-    assert Budget(con, ECHT, vandaag="2026-12-19").max_usd == 75.0
-    assert tegoed.budget_plafond(con, ECHT, date(2027, 1, 15)) == 35.0
-    januari = Budget(con, ECHT, vandaag="2027-01-15")
+    assert tegoed.budget_plafond(con, RUIM, date(2026, 12, 19)) == 75.0
+    assert Budget(con, RUIM, vandaag="2026-12-19").max_usd == 75.0
+    assert tegoed.budget_plafond(con, RUIM, date(2027, 1, 15)) == 35.0
+    januari = Budget(con, RUIM, vandaag="2027-01-15")
     assert januari.max_usd == 35.0 and januari.resterend() == 35.0
 
 
 def test_wat_in_de_gratis_dagen_van_de_maand_is_uitgegeven_telt_niet_mee(con):
-    """December: tot en met de 19e gratis. Daarna blijft er $35 voor de rest van de maand, hoeveel de eerste
-    helft ook kostte. Zo raakt het budget niet in een klap 'op' en loopt ai_analist door."""
+    """December: tot en met de 19e gratis. Daarna blijft er $35 voor de rest van de maand, ook al kostte de
+    eerste helft meer. Zo raakt het budget niet in een klap 'op' en loopt ai_analist door."""
     for dag in range(1, 20):
-        _kosten(con, f"2026-12-{dag:02d}", 2.50)            # $47,50 terwijl het tegoed geldig was
-    op_de_20e = Budget(con, ECHT, vandaag="2026-12-20")
-    assert op_de_20e.uitgegeven() == pytest.approx(47.50)
-    assert op_de_20e.max_usd == pytest.approx(35.0 + 47.50) and op_de_20e.resterend() == pytest.approx(35.0)
+        _kosten(con, f"2026-12-{dag:02d}", 2.00)            # $38 terwijl het tegoed geldig was
+    op_de_20e = Budget(con, RUIM, vandaag="2026-12-20")
+    assert op_de_20e.uitgegeven() == pytest.approx(38.0)
+    assert op_de_20e.max_usd == pytest.approx(35.0 + 38.0) and op_de_20e.resterend() == pytest.approx(35.0)
     assert not op_de_20e.is_op()
     # Wat daarna wordt uitgegeven, gaat wel van de $35 af.
     _kosten(con, "2026-12-21", 5.00)
     _kosten(con, "2026-12-22", 5.00)
-    assert Budget(con, ECHT, vandaag="2026-12-23").resterend() == pytest.approx(25.0)
+    assert Budget(con, RUIM, vandaag="2026-12-23").resterend() == pytest.approx(25.0)
     _kosten(con, "2026-12-28", 25.00)
-    assert Budget(con, ECHT, vandaag="2026-12-29").is_op(), "meer dan $35 zelf betaald: op"
+    assert Budget(con, RUIM, vandaag="2026-12-29").is_op(), "meer dan $35 zelf betaald: op"
     # In januari begint de teller opnieuw, met $35.
-    assert Budget(con, ECHT, vandaag="2027-01-04").resterend() == pytest.approx(35.0)
+    assert Budget(con, RUIM, vandaag="2027-01-04").resterend() == pytest.approx(35.0)
+
+
+def test_het_plafond_wordt_nooit_hoger_dan_het_maandbudget(con):
+    """Kostte het gratis deel van de maand al meer dan $40, dan blijft het plafond het maandbudget van $75."""
+    for dag in range(1, 20):
+        _kosten(con, f"2026-12-{dag:02d}", 2.50)            # $47,50 terwijl het tegoed geldig was
+    op_de_20e = Budget(con, RUIM, vandaag="2026-12-20")
+    assert op_de_20e.max_usd == 75.0 and op_de_20e.resterend() == pytest.approx(27.50)
 
 
 def test_met_nieuw_tegoed_is_het_budget_weer_75(con, cfg_min):
+    cfg_min = _met_opus(cfg_min)
     cfg = _met_tegoed(cfg_min, (100, date(2026, 11, 17), date(2026, 12, 20)), (100, date(2026, 12, 18), date(2027, 1, 20)))
     assert Budget(con, cfg, vandaag="2026-12-21").max_usd == 75.0
     assert Budget(con, cfg, vandaag="2027-01-20").max_usd == 35.0
@@ -164,27 +203,52 @@ def test_het_lage_bedrag_is_nooit_hoger_dan_het_gewone(con, cfg_min):
 
 
 def test_alleen_opus_hangt_van_het_gratis_tegoed_af():
-    for p in ronde_mod.ai_portefeuilles(ECHT):
-        geldig = tegoed.mag_draaien(ECHT, p, date(2026, 12, 19))
-        verlopen = tegoed.mag_draaien(ECHT, p, date(2026, 12, 20))
+    for p in ronde_mod.ai_portefeuilles(RUIM):
+        geldig = tegoed.mag_draaien(RUIM, p, date(2026, 12, 19))
+        verlopen = tegoed.mag_draaien(RUIM, p, date(2026, 12, 20))
         assert geldig and verlopen == (p["naam"] != "ai_opus"), p["naam"]
+
+
+def test_in_de_echte_meting_hangt_geen_portefeuille_van_het_gratis_tegoed_af():
+    namen = [p["naam"] for p in ronde_mod.ai_portefeuilles(ECHT)]
+    assert namen == ["ai_analist", "ai_controle_haiku", "ai_enkel"]
+    for p in ronde_mod.ai_portefeuilles(ECHT):
+        assert tegoed.mag_draaien(ECHT, p, date(2026, 12, 19)) and tegoed.mag_draaien(ECHT, p, date(2027, 6, 1))
 
 
 # ------------------------------------------------------------- de meldingen
 
 
 def test_melding_vijf_dagen_voor_het_verlopen_en_bij_het_terugvallen(con):
-    assert tegoed.melding(con, ECHT, date(2026, 12, 14)) is None, "zes dagen ervoor: nog niets"
-    vooraf = tegoed.melding(con, ECHT, date(2026, 12, 15))
+    assert tegoed.melding(con, RUIM, date(2026, 12, 14)) is None, "zes dagen ervoor: nog niets"
+    vooraf = tegoed.melding(con, RUIM, date(2026, 12, 15))
     assert vooraf.startswith("Herinnering: het gratis API-tegoed verloopt op zondag 20 december 2026 om 00:00 UTC.")
     assert "credits kopen is pas nodig voor die datum" in vooraf and "van $75,00 naar $35,00 per maand" in vooraf
-    assert tegoed.melding(con, ECHT, date(2026, 12, 16)) is None, "een keer is genoeg"
+    assert "(ai_opus stopt, ai_analist loopt door)." in vooraf
+    assert tegoed.melding(con, RUIM, date(2026, 12, 16)) is None, "een keer is genoeg"
 
-    terug = tegoed.melding(con, ECHT, date(2026, 12, 20))
+    terug = tegoed.melding(con, RUIM, date(2026, 12, 20))
     assert terug.startswith("LET OP: het gratis API-tegoed is volgens config.yaml verlopen op zondag 20 december 2026")
     assert "teruggevallen van $75,00 naar $35,00 per maand" in terug
     assert "ai_opus doet niet meer mee, ai_analist loopt door" in terug
-    assert tegoed.melding(con, ECHT, date(2026, 12, 21)) is None and tegoed.melding(con, ECHT, date(2027, 2, 1)) is None
+    assert tegoed.melding(con, RUIM, date(2026, 12, 21)) is None and tegoed.melding(con, RUIM, date(2027, 2, 1)) is None
+
+
+def test_de_meldingen_in_de_echte_meting_zonder_opus(con):
+    """Budget $35 met en zonder tegoed: de ronde verandert niet, maar je betaalt vanaf dan zelf. Dat wordt gemeld."""
+    assert tegoed.melding(con, ECHT, date(2026, 12, 14)) is None
+    vooraf = tegoed.melding(con, ECHT, date(2026, 12, 15))
+    assert vooraf.startswith("Herinnering: het gratis API-tegoed verloopt op zondag 20 december 2026 om 00:00 UTC.")
+    assert vooraf.endswith("Zo nee: credits kopen is pas nodig voor die datum. Het AI-budget blijft dan $35,00 per "
+                           "maand en aan de meting verandert niets.")
+    assert "opus" not in vooraf and "valt" not in vooraf
+
+    terug = tegoed.melding(con, ECHT, date(2026, 12, 20))
+    assert terug.startswith("LET OP: het gratis API-tegoed is volgens config.yaml verlopen op zondag 20 december 2026")
+    assert "Het AI-budget blijft $35,00 per maand en aan de meting verandert niets." in terug
+    assert "dan betaal je vanaf nu zelf: zorg dat er credits zijn, met automatisch opwaarderen uit." in terug
+    assert "opus" not in terug and "teruggevallen" not in terug
+    assert tegoed.melding(con, ECHT, date(2026, 12, 21)) is None
 
 
 def test_ook_als_de_ronde_de_eerste_dag_miste_komt_de_melding_nog(con):
@@ -213,12 +277,22 @@ def test_de_tekst_voor_het_weekrapport_met_geldig_tegoed(con):
     assert "naar schatting is er nog ongeveer $95,00 over" in tekst
     assert "13 november" not in tekst, "het verlopen tegoed staat er niet meer bij"
     assert "Kijk rond de vervaldatum in de console of er nieuw tegoed is bijgekomen." in tekst
+    assert tekst.endswith("Zo nee: dan betaal je vanaf die dag zelf. Het AI-budget blijft dan $35,00 per maand en "
+                          "aan de meting verandert niets.")
+    assert "opus" not in tekst
+    # Met de ruime opzet staat erbij wat er dan wegvalt.
+    ruim = tegoed.als_tekst(con, RUIM, date(2026, 11, 29))
+    assert ruim.endswith("Het AI-budget valt dan terug van $75,00 naar $35,00 per maand (ai_opus stopt, ai_analist "
+                         "loopt door).")
 
 
 def test_de_tekst_voor_het_weekrapport_zonder_geldig_tegoed(con):
     tekst = tegoed.als_tekst(con, ECHT, date(2027, 1, 10))
     assert "geen geldig gratis tegoed bekend: het laatste verliep op zondag 20 december 2026" in tekst
-    assert "$35,00 voor deze maand" in tekst and "ai_opus doet niet mee" in tekst
+    assert "Het AI-budget is $35,00 voor deze maand ($35,00 per maand zonder gratis tegoed). Je betaalt de AI-kosten nu zelf." in tekst
+    assert "opus" not in tekst
+    ruim = tegoed.als_tekst(con, RUIM, date(2027, 1, 10))
+    assert "$35,00 voor deze maand" in ruim and "en ai_opus doet niet mee. Je betaalt de AI-kosten nu zelf." in ruim
 
 
 def test_het_weekrapport_laat_het_tegoed_zien(con, cfg_min):
@@ -278,8 +352,9 @@ def _nacht(con, cfg, monkeypatch, laatste: str = "2027-01-15"):
     return markt, dagen[-1], clients
 
 
-def _cfg_nacht(cfg_min) -> dict:
-    cfg = copy.deepcopy(cfg_min)
+def _cfg_nacht(cfg_min, met_opus: bool = True) -> dict:
+    """De instellingen voor een testnacht. Standaard de ruime opzet (met ai_opus), om de regeling te testen."""
+    cfg = _met_opus(cfg_min) if met_opus else copy.deepcopy(cfg_min)
     cfg["modus"] = "echt"
     cfg["ai_watchlist"] = ["AAA", "BBB"]
     return cfg
@@ -293,6 +368,24 @@ def _beoordeeld(con, datum: str) -> dict[str, int]:
 def _wachtrij(con, naam: str) -> list[tuple[str, str]]:
     return [(r["symbool"], r["actie"]) for r in con.execute(
         "SELECT symbool, actie FROM wachtrij WHERE portefeuille = ? ORDER BY symbool", (naam,))]
+
+
+@pytest.mark.parametrize("dagen_tot_verlopen", [20, -2])
+def test_de_echte_meting_draait_met_en_zonder_gratis_tegoed_hetzelfde(con, cfg_min, monkeypatch, dagen_tot_verlopen):
+    """Zonder ai_opus: drie AI-portefeuilles, geen aanroep op Opus, budget $35, en niets wordt overgeslagen."""
+    dagelijks = _laad_dagelijks(f"script_dagelijks_tegoed_0_{dagen_tot_verlopen + 2}")
+    cfg = _met_tegoed(_cfg_nacht(cfg_min, met_opus=False),
+                      (100, VANDAAG - timedelta(days=40), VANDAAG + timedelta(days=dagen_tot_verlopen)))
+    markt, datum, clients = _nacht(con, cfg, monkeypatch)
+
+    regels = dagelijks._ai_ronde(con, cfg, markt, datum, nieuw_nieuws=False, ingehaald=1)
+
+    assert _beoordeeld(con, datum) == {"ai_analist": 2, "ai_controle_haiku": 2, "ai_enkel": 2}
+    assert not any("overgeslagen" in r for r in regels)
+    assert not [a for a in clients[0].aanroepen if a["model"] == "claude-opus-5-5"]
+    assert clients[0].budget.max_usd == pytest.approx(35.0)
+    assert _wachtrij(con, "ai_rangorde") == [("AAA", "KOOP"), ("BBB", "KOOP")]
+    assert _wachtrij(con, "ai_opus_rangorde") == [], "bestaat niet in de echte meting en doet dus niets"
 
 
 def test_met_gratis_tegoed_draaien_alle_vier_en_kiest_de_rangorde_van_opus(con, cfg_min, monkeypatch):
@@ -334,7 +427,7 @@ def test_bij_een_krap_budget_valt_opus_als_eerste_af(con, cfg_min, monkeypatch):
     """Met gratis tegoed en $75: is er te weinig over om ai_analist de maand te laten afmaken EN Opus te betalen,
     dan wordt Opus overgeslagen. De goedkope bijportefeuilles passen nog en draaien gewoon; ai_analist altijd."""
     dagelijks = _laad_dagelijks("script_dagelijks_tegoed_3")
-    cfg = _cfg_nacht(cfg_min)                      # zonder 'tegoed': het budget is $75, ai_opus mag draaien
+    cfg = _cfg_nacht(cfg_min)                      # ruime opzet zonder 'tegoed': het budget is $75, ai_opus mag draaien
     assert cfg["ai"]["budget"]["max_usd_per_maand"] == 75
     markt, datum, clients = _nacht(con, cfg, monkeypatch, laatste="2026-12-02")
     # Wat een nacht van elk tot nu toe kostte. Voor ai_analist precies wat de nep-client in deze test rekent
@@ -368,7 +461,7 @@ def test_bij_een_krap_budget_valt_opus_als_eerste_af(con, cfg_min, monkeypatch):
 # ---------------------------------------------- de hele ronde: de melding gaat uit
 
 
-def test_de_ronde_stuurt_de_melding_over_het_terugvallen_een_keer(tmp_path, monkeypatch):
+def test_de_ronde_stuurt_de_melding_over_het_verlopen_een_keer(tmp_path, monkeypatch):
     from bot import modus
 
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
@@ -399,7 +492,23 @@ def test_de_ronde_stuurt_de_melding_over_het_terugvallen_een_keer(tmp_path, monk
     code, _ = dagelijks.ronde(eerste)
     assert code == 0
     over_tegoed = [b for b in eerste.berichten if b.startswith("LET OP: het gratis API-tegoed is volgens config.yaml verlopen")]
-    assert len(over_tegoed) == 1 and "ai_opus doet niet meer mee, ai_analist loopt door" in over_tegoed[0]
+    assert len(over_tegoed) == 1
+    assert "Het AI-budget blijft $35,00 per maand en aan de meting verandert niets." in over_tegoed[0]
+    assert "dan betaal je vanaf nu zelf" in over_tegoed[0] and "opus" not in over_tegoed[0]
+
+    # De portefeuilles van de echte meting na deze eerste ronde: geen Opus, en naast de hoofdvraag
+    # (ai_rangorde) en de meetlatten 11 verkennende. De winnaarsgrens is dus 0,05 gedeeld door 11.
+    from bot import meting, rapport
+
+    con = database.verbind(db)
+    namen = [r["naam"] for r in con.execute("SELECT naam FROM portefeuilles WHERE actief = 1 ORDER BY naam")]
+    assert not any("opus" in n for n in namen), namen
+    verkennend = [n for n in namen if n not in rapport.MEETLATTEN and n != cfg["meting"]["ai_portefeuille"]]
+    assert len(verkennend) == 11, verkennend
+    kal = [r["datum"] for r in con.execute("SELECT DISTINCT datum FROM koersen WHERE symbool = 'SPY' ORDER BY datum")]
+    v = meting.verkennend(con, cfg, kal[-1], kal, cfg["meting"]["ai_portefeuille"], set())
+    assert v["aantal"] == 11 and v["grens_p"] == pytest.approx(0.05 / 11)
+    con.close()
 
     tweede = args()
     dagelijks.ronde(tweede)

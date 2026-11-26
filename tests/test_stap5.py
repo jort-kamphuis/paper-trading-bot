@@ -124,8 +124,9 @@ def test_berichten_uit_andere_chats_worden_genegeerd(monkeypatch):
         }
 
     monkeypatch.setattr(telegram, "_roep_aan", nep)
-    berichten, volgende = telegram.lees_berichten("t", "42", None)
+    berichten, volgende, ontvangen = telegram.lees_berichten("t", "42")
     assert [b["tekst"] for b in berichten] == ["/akkoord 1"]
+    assert ontvangen == 2
     assert volgende == 12, "ook genegeerde berichten worden afgevinkt, anders komen ze steeds terug"
 
 

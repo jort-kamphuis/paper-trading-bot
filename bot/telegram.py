@@ -1,7 +1,4 @@
-"""Berichten naar Telegram sturen.
-
-Alleen het versturen van een bericht naar jouw eigen chat. De bot leest hier
-geen opdrachten (dat komt in stap 5, voor het akkoord op een verbetering).
+"""Berichten naar Telegram sturen, en je antwoorden (/akkoord, /afwijzen) lezen.
 
 De sleutel (TELEGRAM_BOT_TOKEN) zit in het internetadres van elke aanroep. Een
 foutmelding van de verbinding bevat dat adres vaak letterlijk. Omdat deze
@@ -116,36 +113,54 @@ def wie_ben_ik(token: str) -> dict:
     return _roep_aan(token, "getMe")["result"]
 
 
-def lees_berichten(token: str, chat_id: str, offset: int | None) -> tuple[list[dict], int | None]:
-    """Haal nieuwe berichten op die uit jouw eigen chat komen.
+def lees_berichten(token: str, chat_id: str) -> tuple[list[dict], int | None, int]:
+    """Haal de berichten op die bij Telegram klaarstaan en uit jouw eigen chat komen.
 
     Berichten uit andere chats worden genegeerd: alleen jij kunt de bot iets
-    laten doen. Geeft de berichten terug ({tekst, wanneer}) en de offset voor
-    de volgende keer. Telegram bewaart onbevestigde berichten ongeveer een dag.
+    laten doen. Geeft terug: de berichten ({nummer, tekst, wanneer}), het nummer
+    waarmee je ze daarna afvinkt (zie 'bevestig'; None als er niets klaarstond),
+    en hoeveel berichten Telegram in totaal teruggaf (ook die uit andere chats).
+
+    BEWUST ZONDER TELLER ('offset'). Telegram geeft dan alles terug wat nog niet
+    is afgevinkt, vanaf het oudste, en gooit zelf niets weg. Met een opgeslagen
+    teller ging het mis: na een week zonder berichten geeft Telegram het
+    volgende bericht een WILLEKEURIG nummer in plaats van het volgende nummer
+    (zo staat het in de documentatie van de Bot API, bij 'update_id'). Valt dat
+    lager uit dan de teller, dan vinkt Telegram het bericht af zonder het ooit
+    te laten zien, en zou een /akkoord stil verdwijnen. Tussen twee akkoordvragen
+    zit bijna altijd meer dan een week.
+
+    Telegram geeft hooguit 100 berichten per keer; zijn er meer, dan komt de
+    rest de volgende ronde. Onbevestigde berichten bewaart Telegram ongeveer een
+    dag. Een bericht in een kanaal heet bij Telegram 'channel_post'; dat lezen
+    we ook, voor het geval jouw chat een kanaal is.
     """
-    gegevens: dict = {"timeout": 0, "allowed_updates": ["message"]}
-    if offset is not None:
-        gegevens["offset"] = offset
+    from datetime import datetime, timezone
+
+    gegevens: dict = {"timeout": 0, "allowed_updates": ["message", "channel_post"]}
     resultaat = _roep_aan(token, "getUpdates", gegevens)["result"]
     berichten: list[dict] = []
-    volgende = offset
+    volgende: int | None = None
     for update in resultaat:
-        volgende = max(volgende or 0, int(update["update_id"]) + 1)
-        bericht = update.get("message") or {}
+        nummer = int(update["update_id"])
+        volgende = max(volgende or 0, nummer + 1)
+        bericht = update.get("message") or update.get("channel_post") or {}
         if str((bericht.get("chat") or {}).get("id")) != str(chat_id):
             continue
         tekst = bericht.get("text")
         if not tekst:
             continue
-        from datetime import datetime, timezone
-
         wanneer = datetime.fromtimestamp(int(bericht.get("date", 0)), timezone.utc)
-        berichten.append({"tekst": tekst, "wanneer": wanneer.strftime("%Y-%m-%d %H:%M UTC")})
-    return berichten, volgende
+        berichten.append({"nummer": nummer, "tekst": tekst, "wanneer": wanneer.strftime("%Y-%m-%d %H:%M UTC")})
+    return berichten, volgende, len(resultaat)
 
 
 def bevestig(token: str, offset: int) -> None:
-    """Laat Telegram weten dat alles tot 'offset' verwerkt is, zodat het niet terugkomt."""
+    """Vink bij Telegram alles af met een nummer lager dan 'offset', zodat het niet terugkomt.
+
+    Alleen aanroepen met het nummer dat 'lees_berichten' net teruggaf, en pas
+    nadat die berichten verwerkt zijn. Nooit met een nummer uit een eerdere ronde.
+    """
     _roep_aan(token, "getUpdates", {"offset": offset, "timeout": 0, "limit": 1})
 
 

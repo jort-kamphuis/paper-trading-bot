@@ -24,6 +24,7 @@ Gebruik:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -316,7 +317,10 @@ def _schatting_echte_meting(con) -> str | None:
     )
 
 
-SLEUTEL_TELEGRAM_OFFSET = "telegram_offset"
+# De nummers van berichten die al verwerkt zijn, maar die we bij Telegram nog niet
+# konden afvinken (de verbinding viel weg). Zo wordt een /akkoord nooit twee keer
+# uitgevoerd. Leeg zodra het afvinken gelukt is.
+SLEUTEL_TELEGRAM_GEZIEN = "telegram_gezien"
 # Hierin zet de ronde een beschrijving van een goedgekeurde wijziging, zodat
 # GitHub Actions die in het commitbericht kan zetten. Staat in .gitignore.
 WIJZIGING_BESTAND = conf.PROJECT / ".wijziging.txt"
@@ -334,18 +338,27 @@ def _verwerk_antwoorden(con, datum: str, droog: bool = False) -> list[str]:
         return []
     token = conf.sleutel("TELEGRAM_BOT_TOKEN")
     chat = conf.sleutel("TELEGRAM_CHAT_ID")
-    opgeslagen = database.lees_instelling(con, SLEUTEL_TELEGRAM_OFFSET)
     try:
-        berichten, volgende = telegram.lees_berichten(
-            token, chat, int(opgeslagen) if opgeslagen else None
-        )
+        # Zonder teller: zie de uitleg bij telegram.lees_berichten.
+        berichten, volgende, ontvangen = telegram.lees_berichten(token, chat)
     except telegram.TelegramFout as fout:
         print(f"Telegram-berichten lezen lukte niet: {fout}")
         return []
+    try:
+        al_gezien = {int(n) for n in json.loads(database.lees_instelling(con, SLEUTEL_TELEGRAM_GEZIEN) or "[]")}
+    except (ValueError, TypeError):
+        al_gezien = set()
+    nieuw = [b for b in berichten if b["nummer"] not in al_gezien]
+    opdrachten = sum(1 for b in nieuw if challenger.lees_opdracht(b["tekst"]) is not None)
+    # Alleen aantallen: dit logboek is openbaar.
+    print(
+        f"Telegram: {ontvangen} bericht(en) opgehaald, {len(berichten)} uit jouw chat, "
+        f"{len(berichten) - len(nieuw)} al eerder verwerkt, {opdrachten} opdracht(en)."
+    )
 
     antwoorden: list[str] = []
     wijzigingen: list[str] = []
-    for bericht in berichten:
+    for bericht in nieuw:
         opdracht = challenger.lees_opdracht(bericht["tekst"])
         if opdracht is None:
             continue
@@ -359,12 +372,16 @@ def _verwerk_antwoorden(con, datum: str, droog: bool = False) -> list[str]:
         if actie == "akkoord" and antwoord.startswith("Akkoord verwerkt"):
             wijzigingen.append(antwoord)
 
+    # Pas NA het verwerken afvinken bij Telegram. Lukt dat niet, dan komen dezelfde
+    # berichten de volgende ronde terug; we onthouden hun nummers en slaan ze dan over.
     if volgende is not None:
-        database.zet_instelling(con, SLEUTEL_TELEGRAM_OFFSET, str(volgende))
         try:
             telegram.bevestig(token, volgende)
-        except telegram.TelegramFout:
-            pass  # de offset staat opgeslagen; volgende keer slaan we ze alsnog over
+            gezien: list[int] = []
+        except telegram.TelegramFout as fout:
+            print(f"Telegram-berichten afvinken lukte niet (ze worden de volgende ronde overgeslagen): {fout}")
+            gezien = sorted(b["nummer"] for b in berichten)
+        database.zet_instelling(con, SLEUTEL_TELEGRAM_GEZIEN, json.dumps(gezien))
     if wijzigingen:
         WIJZIGING_BESTAND.write_text("\n".join(wijzigingen) + "\n", encoding="utf-8")
     return antwoorden

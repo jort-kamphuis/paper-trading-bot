@@ -537,6 +537,17 @@ chat, en alleen op precies deze twee opdrachten. Telegram bewaart berichten aan
 een bot ongeveer een dag; antwoord je en mist de bot de nacht erna, stuur het dan
 gerust opnieuw.
 
+**Hoe de bot je antwoord leest (aangepast op 26 november 2026).** De nachtronde
+vraagt Telegram om alles wat nog niet is afgevinkt, verwerkt dat, en vinkt het
+daarna pas af. Eerder vroeg de bot om berichten "vanaf mijn opgeslagen teller".
+Dat kon misgaan: na een week zonder berichten geeft Telegram het volgende bericht
+een willekeurig nummer, en is dat lager dan de teller, dan verdwijnt het bericht
+ongezien. In de proefweek is `/akkoord 1` nooit aangekomen; of dit de oorzaak
+was, is niet vastgesteld. Lukt het afvinken een keer niet, dan onthoudt de bot
+welke berichten al verwerkt zijn, zodat een akkoord nooit twee keer wordt
+uitgevoerd. In het logboek van de ronde staat hoeveel berichten er zijn opgehaald
+(alleen aantallen).
+
 ---
 
 ## Beginnen
